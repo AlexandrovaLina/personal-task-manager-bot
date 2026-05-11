@@ -21,4 +21,7 @@ export class TaskEntity extends BaseEntity {
 
   @Column({ type: 'text', nullable: true })
   public comments?: string;
+
+  @Column({ type: 'boolean', default: false })
+  public isCommentDirty: boolean;
 }

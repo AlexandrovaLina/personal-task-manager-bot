@@ -8,6 +8,7 @@ import {
   BotCommands,
   GENERATE_TASK_REPORT_REGEX,
   GET_TASK_INFO_REGEX,
+  SEPARATOR_REGEX,
   UPDATE_TASK_COMMENTS_REGEX,
 } from './constants';
 import { TaskEntity } from '../task/task.entity';
@@ -39,6 +40,11 @@ export class TelegramBotService {
       { command: 'list', description: 'Список задач' },
       { command: 'sync', description: 'Синхронизация из Jira' },
       { command: 'report', description: 'Отчет по выбранным таскам' },
+      {
+        command: 'report_auto',
+        description: 'Автоотчет по задачам с комментариями',
+      },
+      { command: 'reset', description: 'Сбросить данные, начать новый период' },
       { command: 'report24', description: 'Отчет из Jira за 24ч' },
       { command: 'issue', description: 'Детали задачи (WA-123)' },
       { command: 'comments', description: 'Комментарии к задаче (WA-123)' },
@@ -119,6 +125,18 @@ export class TelegramBotService {
       });
     });
 
+    this.bot.onText(BotCommands.REPORT_AUTO, async (msg) => {
+      await this.reportAutoHandler(msg.chat.id);
+    });
+
+    this.bot.onText(BotCommands.RESET, async (msg) => {
+      await this.separatorHandler(msg.chat.id);
+    });
+
+    this.bot.onText(SEPARATOR_REGEX, async (msg) => {
+      await this.separatorHandler(msg.chat.id);
+    });
+
     this.bot.onText(BotCommands.REPORT24, async (msg) => {
       await this.runJiraScript(msg.chat.id, 'report_24h.py');
     });
@@ -155,6 +173,7 @@ export class TelegramBotService {
           chatId,
           `Доступные команды:
 /report - отчет по выбранным таскам
+/report_auto - автоотчет по задачам с комментариями
 /report24 - отчет из Jira за 24ч (72ч по пн)
 /issue <WA-123> - детали задачи
 /comments <WA-123> - комментарии
@@ -163,7 +182,8 @@ export class TelegramBotService {
 /list - список задач
 /sync - синхронизация из Jira
 
-Обновить комментарий: <номер>: <текст>`,
+Обновить комментарий: <номер>: <текст>
+/reset или ---- - сбросить данные, начать новый период`,
         );
         return;
       }
@@ -214,10 +234,39 @@ export class TelegramBotService {
       return;
     }
 
-    await this.taskService.update(task.id, { comments: comment });
+    await this.taskService.update(task.id, {
+      comments: comment,
+      isCommentDirty: true,
+    });
     this.bot.sendMessage(
       chatId,
       `Таска с номером ${taskNumber} успешно обновлена`,
+    );
+  }
+
+  private async reportAutoHandler(chatId: number) {
+    const report = await this.taskService.generateAutoReport();
+
+    if (!report) {
+      this.bot.sendMessage(chatId, 'Нет задач с комментариями для отчёта');
+      return;
+    }
+
+    this.bot.sendMessage(chatId, report, { parse_mode: 'Markdown' });
+  }
+
+  private async separatorHandler(chatId: number) {
+    const dirtyTasks = await this.taskService.getDirtyTasks();
+
+    if (!dirtyTasks.length) {
+      this.bot.sendMessage(chatId, 'Нет данных для сброса');
+      return;
+    }
+
+    await this.taskService.resetDirtyFlags();
+    this.bot.sendMessage(
+      chatId,
+      `Данные сброшены (${dirtyTasks.length} задач). Новый рабочий период начат.`,
     );
   }
 

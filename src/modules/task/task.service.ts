@@ -1,6 +1,6 @@
 import { TaskEntity } from './task.entity';
 import { Injectable, Logger } from '@nestjs/common';
-import { DataSource, InsertResult, UpdateResult } from 'typeorm';
+import { DataSource, InsertResult, IsNull, UpdateResult } from 'typeorm';
 import { CreateTaskDto } from './dto';
 import { withTransaction } from 'src/common/helpers';
 import { JiraService } from '../jira/jira.service';
@@ -98,5 +98,37 @@ export class TaskService {
       : 'Отсутствуют';
     const report = `Таска [WA-${task.number}: ${taskTitleFormatter(task.title)}](${task.url})\nСтатус - ${task.state} \nКомментарии - ${comments}`;
     return report;
+  }
+
+  public async getDirtyTasks(): Promise<TaskEntity[]> {
+    const taskRepository = this.datasource.getRepository(TaskEntity);
+
+    return taskRepository.find({
+      where: { isCommentDirty: true, deletedAt: IsNull() },
+      order: { number: 'DESC' },
+    });
+  }
+
+  public async resetDirtyFlags(): Promise<void> {
+    const taskRepository = this.datasource.getRepository(TaskEntity);
+
+    await taskRepository.update(
+      { isCommentDirty: true },
+      { isCommentDirty: false },
+    );
+  }
+
+  public async generateAutoReport(): Promise<string | null> {
+    const dirtyTasks = await this.getDirtyTasks();
+
+    if (!dirtyTasks.length) {
+      return null;
+    }
+
+    const lines = dirtyTasks.map(
+      (task, index) => `${index + 1}. ${this.buildTaskReport(task)}`,
+    );
+
+    return `Отчет по таскам \n\n ${lines.join('\n\n')}`;
   }
 }

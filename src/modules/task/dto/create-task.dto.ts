@@ -1,5 +1,6 @@
 import { CreateTaskPayloadData } from '../interfaces';
 import {
+  IsBoolean,
   IsDefined,
   IsNumber,
   IsOptional,
@@ -36,4 +37,8 @@ export class CreateTaskDto implements CreateTaskPayloadData {
   @IsOptional()
   @IsString()
   public comments?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  public isCommentDirty?: boolean;
 }
