@@ -4,7 +4,7 @@ import { DataSource, InsertResult, IsNull, UpdateResult } from 'typeorm';
 import { CreateTaskDto } from './dto';
 import { withTransaction } from 'src/common/helpers';
 import { JiraService } from '../jira/jira.service';
-import { TASK_PAGE_SIZE } from './constants';
+import { TASK_PAGE_SIZE, TaskState, ReportHeader } from './constants';
 import { taskTitleFormatter, escapeMarkdown } from './helpers';
 
 @Injectable()
@@ -118,17 +118,60 @@ export class TaskService {
     );
   }
 
+  public async getTasksByState(state: string): Promise<TaskEntity[]> {
+    const taskRepository = this.datasource.getRepository(TaskEntity);
+
+    return taskRepository.find({
+      where: { state, deletedAt: IsNull() },
+      order: { number: 'DESC' },
+    });
+  }
+
+  private buildSection(
+    tasks: TaskEntity[],
+    counter: { value: number },
+    header?: ReportHeader,
+  ): string | null {
+    if (!tasks.length) return null;
+
+    const lines = tasks
+      .map((task) => `${counter.value++}. ${this.buildTaskReport(task)}`)
+      .join('\n\n');
+
+    return header ? `${header}\n\n${lines}` : lines;
+  }
+
   public async generateAutoReport(): Promise<string | null> {
-    const dirtyTasks = await this.getDirtyTasks();
+    const [
+      dirtyTasks,
+      devAnalysisTasks,
+      inProgressTasks,
+      awaitingTasks,
+      blockedTasks,
+    ] = await Promise.all([
+      this.getDirtyTasks(),
+      this.getTasksByState(TaskState.DEV_ANALYSIS),
+      this.getTasksByState(TaskState.IN_PROGRESS),
+      this.getTasksByState(TaskState.AWAITING_CLIENT_FEEDBACK),
+      this.getTasksByState(TaskState.BLOCKED),
+    ]);
 
-    if (!dirtyTasks.length) {
-      return null;
-    }
-
-    const lines = dirtyTasks.map(
-      (task, index) => `${index + 1}. ${this.buildTaskReport(task)}`,
+    const currentTasks = [...devAnalysisTasks, ...inProgressTasks];
+    const sectionIds = new Set(
+      [...currentTasks, ...awaitingTasks, ...blockedTasks].map((t) => t.id),
     );
+    const mainTasks = dirtyTasks.filter((t) => !sectionIds.has(t.id));
 
-    return `Отчет по таскам \n\n ${lines.join('\n\n')}`;
+    const counter = { value: 1 };
+    const sections = [
+      this.buildSection(mainTasks, counter),
+      this.buildSection(currentTasks, counter, ReportHeader.CURRENT),
+      this.buildSection(awaitingTasks, counter, ReportHeader.ADDITIONAL),
+      this.buildSection(blockedTasks, counter, ReportHeader.BLOCKED),
+    ].filter(Boolean);
+
+    if (!sections.length) return null;
+
+    return [ReportHeader.TITLE, ...sections].join('\n\n');
   }
 }
