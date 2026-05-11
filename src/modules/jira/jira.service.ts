@@ -20,14 +20,20 @@ export class JiraService {
 
   public async getTasks(): Promise<any> {
     try {
-      const url = `${this.baseUrl}/search/jql?jql=project=${this.projectKey} AND assignee=currentUser() ORDER BY updated DESC&maxResults=100&fields=*all`;
+      const url = `${this.baseUrl}/search/jql`;
       const headers = {
         Authorization: `Basic ${this.authToken}`,
         Accept: 'application/json',
+        'Content-Type': 'application/json',
+      };
+      const body = {
+        jql: `project=${this.projectKey} AND assignee=currentUser() ORDER BY updated DESC`,
+        maxResults: 100,
+        fields: ['summary', 'status'],
       };
 
       const response = await firstValueFrom(
-        this.httpService.get(url, { headers }),
+        this.httpService.post(url, body, { headers }),
       );
 
       return response.data;
