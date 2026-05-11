@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as TelegramBot from 'node-telegram-bot-api';
 import { TaskService } from '../task/task.service';
+import { ScriptRunnerService } from '../script-runner';
 import { forEachPromise } from 'src/common/helpers';
 import {
   BotCommands,
@@ -19,6 +20,7 @@ export class TelegramBotService {
     private readonly logger: Logger,
     private readonly configService: ConfigService,
     private readonly taskService: TaskService,
+    private readonly scriptRunner: ScriptRunnerService,
   ) {
     this.logger = new Logger(TelegramBotService.name);
     this.bot = new TelegramBot(
@@ -31,6 +33,19 @@ export class TelegramBotService {
 
   public initBot() {
     this.logger.log('Initialized TG Bot');
+
+    this.bot.setMyCommands([
+      { command: 'start', description: 'Главное меню' },
+      { command: 'list', description: 'Список задач' },
+      { command: 'sync', description: 'Синхронизация из Jira' },
+      { command: 'report', description: 'Отчет по выбранным таскам' },
+      { command: 'report24', description: 'Отчет из Jira за 24ч' },
+      { command: 'issue', description: 'Детали задачи (WA-123)' },
+      { command: 'comments', description: 'Комментарии к задаче (WA-123)' },
+      { command: 'subtasks', description: 'Подзадачи (WA-123)' },
+      { command: 'epic', description: 'Дети эпика (WA-123)' },
+    ]);
+
     const mainMenu = {
       reply_markup: {
         inline_keyboard: [[{ text: 'Help', callback_data: 'help' }]],
@@ -104,13 +119,51 @@ export class TelegramBotService {
       });
     });
 
+    this.bot.onText(BotCommands.REPORT24, async (msg) => {
+      await this.runJiraScript(msg.chat.id, 'report_24h.py');
+    });
+
+    this.bot.onText(BotCommands.ISSUE, async (msg, match) => {
+      const key = match?.[1]?.trim();
+      if (!key) return;
+      await this.runJiraScript(msg.chat.id, 'fetch_issue.py', [key]);
+    });
+
+    this.bot.onText(BotCommands.COMMENTS, async (msg, match) => {
+      const key = match?.[1]?.trim();
+      if (!key) return;
+      await this.runJiraScript(msg.chat.id, 'get_comments.py', [key]);
+    });
+
+    this.bot.onText(BotCommands.SUBTASKS, async (msg, match) => {
+      const key = match?.[1]?.trim();
+      if (!key) return;
+      await this.runJiraScript(msg.chat.id, 'get_subtasks.py', [key]);
+    });
+
+    this.bot.onText(BotCommands.EPIC, async (msg, match) => {
+      const key = match?.[1]?.trim();
+      if (!key) return;
+      await this.runJiraScript(msg.chat.id, 'fetch_epic_children.py', [key]);
+    });
+
     this.bot.on('callback_query', async (callbackQuery) => {
       const message = callbackQuery.message;
       const chatId = message.chat.id;
       if (callbackQuery.data === 'help') {
         this.bot.sendMessage(
           chatId,
-          '1. Для того, чтобы обновить комментарий к задаче, пришлите мне сообщение в формате <номер таски>: <комментарий> \n2. Для генерации отчета воспользуйтесь командой /report',
+          `Доступные команды:
+/report - отчет по выбранным таскам
+/report24 - отчет из Jira за 24ч (72ч по пн)
+/issue <WA-123> - детали задачи
+/comments <WA-123> - комментарии
+/subtasks <WA-123> - подзадачи
+/epic <WA-123> - дети эпика
+/list - список задач
+/sync - синхронизация из Jira
+
+Обновить комментарий: <номер>: <текст>`,
         );
         return;
       }
@@ -175,6 +228,25 @@ export class TelegramBotService {
     );
     await this.taskService.syncTaskData();
     this.bot.sendMessage(chatId, 'Готово');
+  }
+
+  private async runJiraScript(
+    chatId: number,
+    scriptName: string,
+    args: string[] = [],
+  ) {
+    this.bot.sendMessage(chatId, 'Загружаю данные из Jira...');
+    try {
+      const result = await this.scriptRunner.runScript(scriptName, args);
+      await this.bot.sendMessage(chatId, result || 'Пустой ответ', {
+        parse_mode: 'Markdown',
+        disable_web_page_preview: true,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Jira script error [${scriptName}]:`, message);
+      this.bot.sendMessage(chatId, `Ошибка при выполнении запроса: ${message}`);
+    }
   }
 
   private async generateInlineKeyboard(
