@@ -301,7 +301,7 @@ export class TelegramBotService {
     await this.taskService.resetDirtyFlags();
     this.bot.sendMessage(
       chatId,
-      `Данные сброшены (${dirtyTasks.length} задач). Новый рабочий период начат.`,
+      `---------------------------------------\nДанные сброшены (${dirtyTasks.length} задач). Новый рабочий период начат.`,
     );
   }
 
