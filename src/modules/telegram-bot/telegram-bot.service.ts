@@ -13,9 +13,38 @@ import {
 } from './constants';
 import { TaskEntity } from '../task/task.entity';
 import { TASK_PAGE_SIZE } from '../task/constants';
+
+const JIRA_SCRIPTS = {
+  report24: {
+    script: 'report_24h.py',
+    label: '📋 Отчёт за 24ч',
+    needsKey: false,
+  },
+  issue: {
+    script: 'fetch_issue.py',
+    label: '🔍 Детали задачи',
+    needsKey: true,
+  },
+  comments: {
+    script: 'get_comments.py',
+    label: '💬 Комментарии',
+    needsKey: true,
+  },
+  subtasks: {
+    script: 'get_subtasks.py',
+    label: '📂 Подзадачи',
+    needsKey: true,
+  },
+  epic: {
+    script: 'fetch_epic_children.py',
+    label: '🏷 Дети эпика',
+    needsKey: true,
+  },
+} as const;
 @Injectable()
 export class TelegramBotService {
   private bot: TelegramBot;
+  private pendingJiraAction = new Map<number, string>();
 
   constructor(
     private readonly logger: Logger,
@@ -45,11 +74,10 @@ export class TelegramBotService {
         description: 'Автоотчет по задачам с комментариями',
       },
       { command: 'reset', description: 'Сбросить данные, начать новый период' },
-      { command: 'report24', description: 'Отчет из Jira за 24ч' },
-      { command: 'issue', description: 'Детали задачи (WA-123)' },
-      { command: 'comments', description: 'Комментарии к задаче (WA-123)' },
-      { command: 'subtasks', description: 'Подзадачи (WA-123)' },
-      { command: 'epic', description: 'Дети эпика (WA-123)' },
+      {
+        command: 'jira',
+        description: 'Jira: отчёт, детали, комментарии и др.',
+      },
     ]);
 
     const mainMenu = {
@@ -137,32 +165,13 @@ export class TelegramBotService {
       await this.separatorHandler(msg.chat.id);
     });
 
-    this.bot.onText(BotCommands.REPORT24, async (msg) => {
-      await this.runJiraScript(msg.chat.id, 'report_24h.py');
-    });
-
-    this.bot.onText(BotCommands.ISSUE, async (msg, match) => {
-      const key = match?.[1]?.trim();
-      if (!key) return;
-      await this.runJiraScript(msg.chat.id, 'fetch_issue.py', [key]);
-    });
-
-    this.bot.onText(BotCommands.COMMENTS, async (msg, match) => {
-      const key = match?.[1]?.trim();
-      if (!key) return;
-      await this.runJiraScript(msg.chat.id, 'get_comments.py', [key]);
-    });
-
-    this.bot.onText(BotCommands.SUBTASKS, async (msg, match) => {
-      const key = match?.[1]?.trim();
-      if (!key) return;
-      await this.runJiraScript(msg.chat.id, 'get_subtasks.py', [key]);
-    });
-
-    this.bot.onText(BotCommands.EPIC, async (msg, match) => {
-      const key = match?.[1]?.trim();
-      if (!key) return;
-      await this.runJiraScript(msg.chat.id, 'fetch_epic_children.py', [key]);
+    this.bot.onText(BotCommands.JIRA, (msg) => {
+      const keyboard = Object.entries(JIRA_SCRIPTS).map(([key, { label }]) => [
+        { text: label, callback_data: `jira_${key}` },
+      ]);
+      this.bot.sendMessage(msg.chat.id, 'Выберите действие:', {
+        reply_markup: { inline_keyboard: keyboard },
+      });
     });
 
     this.bot.on('callback_query', async (callbackQuery) => {
@@ -174,16 +183,32 @@ export class TelegramBotService {
           `Доступные команды:
 /report - отчет по выбранным таскам
 /report_auto - автоотчет по задачам с комментариями
-/report24 - отчет из Jira за 24ч (72ч по пн)
-/issue <WA-123> - детали задачи
-/comments <WA-123> - комментарии
-/subtasks <WA-123> - подзадачи
-/epic <WA-123> - дети эпика
+/jira - меню Jira-скриптов
 /list - список задач
 /sync - синхронизация из Jira
 
 Обновить комментарий: <номер>: <текст>
 /reset или ---- - сбросить данные, начать новый период`,
+        );
+        return;
+      }
+      if (callbackQuery.data.startsWith('jira_')) {
+        const action = callbackQuery.data.replace('jira_', '');
+        const config = JIRA_SCRIPTS[action];
+        if (!config) return;
+
+        this.bot.answerCallbackQuery(callbackQuery.id);
+
+        if (!config.needsKey) {
+          await this.runJiraScript(chatId, config.script);
+          return;
+        }
+
+        this.pendingJiraAction.set(chatId, config.script);
+        this.bot.sendMessage(
+          chatId,
+          'Введите ключ задачи (например, WA-123):',
+          { reply_markup: { force_reply: true } },
         );
         return;
       }
@@ -209,6 +234,16 @@ export class TelegramBotService {
       }
 
       this.bot.answerCallbackQuery(callbackQuery.id, { show_alert: false });
+    });
+
+    this.bot.on('message', async (msg) => {
+      const chatId = msg.chat.id;
+      const script = this.pendingJiraAction.get(chatId);
+      if (!script || !msg.text || msg.text.startsWith('/')) return;
+
+      this.pendingJiraAction.delete(chatId);
+      const key = msg.text.trim();
+      await this.runJiraScript(chatId, script, [key]);
     });
   }
 
