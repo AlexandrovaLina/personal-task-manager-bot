@@ -115,7 +115,8 @@ for issue in candidates:
         if c['created'] >= since:
             changed = True
             author = c.get('author', {}).get('displayName', '')
-            text = extract_text(c.get('body', {}))[:120]
+            full_text = extract_text(c.get('body', {}))
+            text = full_text[:300] + ('…✂️' if len(full_text) > 300 else '')
             comments.append(f"{text} ({author})")
     if was_reassigned:
         reassigned.append(issue)

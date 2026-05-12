@@ -12,6 +12,12 @@ base_url = os.environ.get('JIRA_BASE_URL', 'https://workaxle.atlassian.net')
 auth = base64.b64encode(f"{email}:{token}".encode()).decode()
 headers = {'Authorization': f'Basic {auth}', 'Content-Type': 'application/json'}
 
+class FollowRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, newheaders, newurl):
+        return urllib.request.Request(newurl, data=req.data, headers=dict(req.headers), method=req.get_method())
+
+opener = urllib.request.build_opener(FollowRedirectHandler)
+
 if len(sys.argv) < 2:
     print("Использование: /epic <ключ эпика>")
     sys.exit(1)
@@ -30,7 +36,7 @@ try:
         f'{base_url}/rest/api/3/search/jql',
         data=body, headers=headers, method='POST'
     )
-    data = json.loads(urllib.request.urlopen(req).read())
+    data = json.loads(opener.open(req).read())
 except urllib.error.HTTPError as e:
     if e.code == 400:
         print(f"Задача {epic_key} не найдена или не является эпиком")

@@ -335,7 +335,7 @@ export class TelegramBotService {
     const initiator = msg.from?.first_name || 'Кто-то';
     await this.notifyOtherPrivateChats(
       chatId,
-      `ℹ️ ${initiator} сбросил(а) данные для отчёта (${dirtyTasks.length} задач). Новый период начат.`,
+      `🔴 ${initiator} сбросил(а) данные для отчёта (${dirtyTasks.length} задач). Новый период начат.`,
     );
   }
 
