@@ -45,6 +45,7 @@ const JIRA_SCRIPTS = {
 export class TelegramBotService {
   private bot: TelegramBot;
   private pendingJiraAction = new Map<number, string>();
+  private privateChatIds = new Set<number>();
 
   constructor(
     private readonly logger: Logger,
@@ -88,14 +89,17 @@ export class TelegramBotService {
     };
 
     this.bot.onText(GET_TASK_INFO_REGEX, async (msg) => {
+      this.trackPrivateChat(msg);
       await this.getTaskHandler(msg.text, msg.chat.id);
     });
 
     this.bot.onText(UPDATE_TASK_COMMENTS_REGEX, async (msg) => {
+      this.trackPrivateChat(msg);
       await this.updateTaskHandler(msg.text, msg.chat.id);
     });
 
     this.bot.onText(BotCommands.START, (msg) => {
+      this.trackPrivateChat(msg);
       const chatId = msg.chat.id;
       this.bot.sendMessage(
         chatId,
@@ -105,6 +109,7 @@ export class TelegramBotService {
     });
 
     this.bot.onText(BotCommands.REPORT, (msg) => {
+      this.trackPrivateChat(msg);
       const chatId = msg.chat.id;
       this.bot
         .sendMessage(
@@ -142,10 +147,12 @@ export class TelegramBotService {
     });
 
     this.bot.onText(BotCommands.SYNC, async (msg) => {
+      this.trackPrivateChat(msg);
       await this.syncTaskHandler(msg.chat.id);
     });
 
     this.bot.onText(BotCommands.LIST, async (msg) => {
+      this.trackPrivateChat(msg);
       const chatId = msg.chat.id;
       const options = await this.generateInlineKeyboard(1);
       this.bot.sendMessage(chatId, 'Ваши задачи:', {
@@ -154,18 +161,22 @@ export class TelegramBotService {
     });
 
     this.bot.onText(BotCommands.REPORT_AUTO, async (msg) => {
+      this.trackPrivateChat(msg);
       await this.reportAutoHandler(msg.chat.id);
     });
 
     this.bot.onText(BotCommands.RESET, async (msg) => {
-      await this.separatorHandler(msg.chat.id);
+      this.trackPrivateChat(msg);
+      await this.separatorHandler(msg);
     });
 
     this.bot.onText(SEPARATOR_REGEX, async (msg) => {
-      await this.separatorHandler(msg.chat.id);
+      this.trackPrivateChat(msg);
+      await this.separatorHandler(msg);
     });
 
     this.bot.onText(BotCommands.JIRA, (msg) => {
+      this.trackPrivateChat(msg);
       const keyboard = Object.entries(JIRA_SCRIPTS).map(([key, { label }]) => [
         { text: label, callback_data: `jira_${key}` },
       ]);
@@ -237,6 +248,7 @@ export class TelegramBotService {
     });
 
     this.bot.on('message', async (msg) => {
+      this.trackPrivateChat(msg);
       const chatId = msg.chat.id;
       const script = this.pendingJiraAction.get(chatId);
       if (!script || !msg.text || msg.text.startsWith('/')) return;
@@ -245,6 +257,21 @@ export class TelegramBotService {
       const key = msg.text.trim();
       await this.runJiraScript(chatId, script, [key]);
     });
+  }
+
+  private trackPrivateChat(msg: TelegramBot.Message) {
+    if (msg.chat.type === 'private') {
+      this.privateChatIds.add(msg.chat.id);
+    }
+  }
+
+  private async notifyOtherPrivateChats(excludeChatId: number, text: string) {
+    for (const chatId of this.privateChatIds) {
+      if (chatId === excludeChatId) continue;
+      this.bot.sendMessage(chatId, text).catch((err) => {
+        this.logger.warn(`Failed to notify chat ${chatId}: ${err.message}`);
+      });
+    }
   }
 
   private async getTaskHandler(messageText: string, chatId: number) {
@@ -290,7 +317,8 @@ export class TelegramBotService {
     this.bot.sendMessage(chatId, report, { parse_mode: 'Markdown' });
   }
 
-  private async separatorHandler(chatId: number) {
+  private async separatorHandler(msg: TelegramBot.Message) {
+    const chatId = msg.chat.id;
     const dirtyTasks = await this.taskService.getDirtyTasks();
 
     if (!dirtyTasks.length) {
@@ -301,7 +329,13 @@ export class TelegramBotService {
     await this.taskService.resetDirtyFlags();
     this.bot.sendMessage(
       chatId,
-      `---------------------------------------\nДанные сброшены (${dirtyTasks.length} задач). Новый рабочий период начат.`,
+      `———————————————————————————————\nДанные сброшены (${dirtyTasks.length} задач). Новый рабочий период начат.`,
+    );
+
+    const initiator = msg.from?.first_name || 'Кто-то';
+    await this.notifyOtherPrivateChats(
+      chatId,
+      `ℹ️ ${initiator} сбросил(а) данные для отчёта (${dirtyTasks.length} задач). Новый период начат.`,
     );
   }
 
