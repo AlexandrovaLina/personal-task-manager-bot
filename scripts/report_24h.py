@@ -136,11 +136,14 @@ print(f'*За период:* {label}\n')
 
 print(f'*Созданные задачи ({len(all_created)})*')
 if all_created:
-    for i in all_created:
+    for idx, i in enumerate(all_created, 1):
         f = i['fields']
         prs = fmt_prs(prs_map.get(i['id'], []))
-        pr_text = f' | PR: {prs}' if prs else ''
-        print(f"• [{i['key']}]({issue_url(i['key'])}) — {f['summary']} | {f['status']['name']} | {f['priority']['name']}{pr_text}")
+        print(f"{idx}. [{i['key']}]({issue_url(i['key'])}) — {f['summary']}")
+        print(f"   📊 {f['status']['name']} | ⚡ {f['priority']['name']}")
+        if prs:
+            print(f"   🔗 PR: {prs}")
+        print()
 else:
     print('Нет новых задач.')
 
@@ -148,14 +151,18 @@ print()
 
 print(f'*Обновлённые задачи ({len(updated_rows)})*')
 if updated_rows:
-    for row in updated_rows:
+    for idx, row in enumerate(updated_rows, 1):
         i = row['issue']
         f = i['fields']
         prs = fmt_prs(prs_map.get(i['id'], []))
-        comment = ' / '.join(row['comments'])
-        pr_text = f' | PR: {prs}' if prs else ''
-        comment_text = f'\n  💬 {comment}' if comment else ''
-        print(f"• [{i['key']}]({issue_url(i['key'])}) — {f['summary']} | {f['status']['name']} | {f['priority']['name']}{pr_text}{comment_text}")
+        print(f"{idx}. [{i['key']}]({issue_url(i['key'])}) — {f['summary']}")
+        print(f"   📊 {f['status']['name']} | ⚡ {f['priority']['name']}")
+        if prs:
+            print(f"   🔗 PR: {prs}")
+        if row['comments']:
+            for c in row['comments']:
+                print(f"   💬 {c}")
+        print()
 else:
     print('Нет обновлённых задач.')
 
@@ -163,10 +170,13 @@ print()
 
 print(f'*Ready to Merge ({len(rtm)})*')
 if rtm:
-    for i in rtm:
+    for idx, i in enumerate(rtm, 1):
         f = i['fields']
         prs = fmt_prs(prs_map.get(i['id'], []))
-        pr_text = f' | PR: {prs}' if prs else ''
-        print(f"• [{i['key']}]({issue_url(i['key'])}) — {f['summary']} | {f['priority']['name']}{pr_text}")
+        print(f"{idx}. [{i['key']}]({issue_url(i['key'])}) — {f['summary']}")
+        print(f"   ⚡ {f['priority']['name']}")
+        if prs:
+            print(f"   🔗 PR: {prs}")
+        print()
 else:
     print('Нет задач в статусе Ready to Merge.')
