@@ -3,6 +3,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '@nestjs/config';
 import { extractError } from 'src/common/helpers';
+import { JiraSearchResponse } from './interfaces';
 
 @Injectable()
 export class JiraService {
@@ -19,7 +20,7 @@ export class JiraService {
   private readonly projectKey =
     this.configService.get<string>(`jira.projectKey`);
 
-  public async getTasks(): Promise<any> {
+  public async getTasks(): Promise<JiraSearchResponse> {
     try {
       const url = `${this.baseUrl}/search/jql`;
       const headers = {
@@ -34,7 +35,7 @@ export class JiraService {
       };
 
       const response = await firstValueFrom(
-        this.httpService.post(url, body, { headers }),
+        this.httpService.post<JiraSearchResponse>(url, body, { headers }),
       );
 
       return response.data;

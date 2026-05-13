@@ -11,6 +11,7 @@ import {
 import { CreateTaskDto } from './dto';
 import { withTransaction, extractError } from 'src/common/helpers';
 import { JiraService } from '../jira/jira.service';
+import { JiraIssue } from '../jira/interfaces';
 import { TASK_PAGE_SIZE, TaskState, ReportHeader } from './constants';
 import { escapeHtml } from '../telegram-bot/helpers';
 
@@ -82,17 +83,19 @@ export class TaskService {
         throw new Error('Invalid Jira response');
       }
 
-      const taskData: Partial<TaskEntity>[] = data.issues.map((el) => ({
-        externalId: el.id,
-        key: el.key,
-        state: el.fields.status.name,
-        number: +el.key.toString().replace('WA-', ''),
-        title: el.fields.summary,
-        url: `https://workaxle.atlassian.net/browse/${el.key}`,
-      }));
+      const taskData: Partial<TaskEntity>[] = data.issues.map(
+        (issue: JiraIssue) => ({
+          externalId: issue.id,
+          key: issue.key,
+          state: issue.fields.status.name,
+          number: +issue.key.replace('WA-', ''),
+          title: issue.fields.summary,
+          url: `https://workaxle.atlassian.net/browse/${issue.key}`,
+        }),
+      );
       await this.bulkUpsert(taskData);
 
-      const activeExternalIds = data.issues.map((el) => el.id);
+      const activeExternalIds = data.issues.map((issue: JiraIssue) => issue.id);
       if (activeExternalIds.length) {
         const taskRepository = this.datasource.getRepository(TaskEntity);
         await taskRepository.softDelete({

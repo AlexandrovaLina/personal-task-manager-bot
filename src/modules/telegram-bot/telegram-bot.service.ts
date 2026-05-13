@@ -122,14 +122,32 @@ export class TelegramBotService {
           const listener = async (replyMsg: TelegramBot.Message) => {
             const chatId = replyMsg.chat.id;
             try {
+              const parsed = replyMsg.text
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean);
+
+              const taskNumbers = parsed.map(Number);
+              const invalid = parsed.filter(
+                (s, i) =>
+                  !Number.isInteger(taskNumbers[i]) || taskNumbers[i] <= 0,
+              );
+
+              if (invalid.length) {
+                this.bot.sendMessage(
+                  chatId,
+                  `Некорректные номера задач: ${invalid.join(', ')}. Введите целые положительные числа через запятую`,
+                );
+                return;
+              }
+
               this.bot.sendMessage(chatId, `Подготавливаю отчет ... `);
-              const taskNumbers = replyMsg.text.split(',');
               let taskReport = '';
               await forEachPromise(
                 taskNumbers,
-                async (taskNumber: string, index) => {
+                async (taskNumber: number, index) => {
                   const current =
-                    await this.taskService.getTaskByKey(+taskNumber);
+                    await this.taskService.getTaskByKey(taskNumber);
                   if (!current?.id) {
                     taskReport += `${index + 1}.Таска номер ${taskNumber} не найдена \n\n`;
                     return;
@@ -236,7 +254,8 @@ export class TelegramBotService {
           return;
         }
         if (callbackQuery.data.startsWith('page_')) {
-          const page = parseInt(callbackQuery.data.split('_')[1]);
+          const page = parseInt(callbackQuery.data.split('_')[1], 10);
+          if (!Number.isInteger(page) || page < 1) return;
 
           const options = await this.generateInlineKeyboard(page);
 
@@ -285,7 +304,16 @@ export class TelegramBotService {
       if (!script || !msg.text || msg.text.startsWith('/')) return;
 
       this.pendingJiraAction.delete(chatId);
-      const key = msg.text.trim();
+      const key = msg.text.trim().toUpperCase();
+
+      if (!/^[A-Z]+-\d+$/.test(key)) {
+        this.bot.sendMessage(
+          chatId,
+          'Неверный формат ключа. Ожидается формат: WA-123',
+        );
+        return;
+      }
+
       await this.runJiraScript(chatId, script, [key]);
     });
   }
@@ -307,9 +335,18 @@ export class TelegramBotService {
 
   private async getTaskHandler(messageText: string, chatId: number) {
     try {
-      const task = await this.taskService.getTaskByKey(+messageText);
+      const taskNumber = Number(messageText);
+      if (!Number.isInteger(taskNumber) || taskNumber <= 0) {
+        this.bot.sendMessage(
+          chatId,
+          'Номер задачи должен быть положительным целым числом',
+        );
+        return;
+      }
+
+      const task = await this.taskService.getTaskByKey(taskNumber);
       if (!task?.id) {
-        this.bot.sendMessage(chatId, `Таска с таким номером не найдена `);
+        this.bot.sendMessage(chatId, `Таска с таким номером не найдена`);
         return;
       }
 
@@ -328,8 +365,21 @@ export class TelegramBotService {
   private async updateTaskHandler(msg: TelegramBot.Message, chatId: number) {
     try {
       const match = msg.text.match(UPDATE_TASK_COMMENTS_REGEX);
+      if (!match) {
+        this.bot.sendMessage(
+          chatId,
+          'Неверный формат. Используйте: <номер>: <комментарий>',
+        );
+        return;
+      }
+
       const taskNumber = match[1];
-      const rawComment = match[2];
+      const rawComment = match[2]?.trim();
+
+      if (!rawComment) {
+        this.bot.sendMessage(chatId, 'Комментарий не может быть пустым');
+        return;
+      }
 
       const task = await this.taskService.getTaskByKey(+taskNumber);
       if (!task?.id) {
