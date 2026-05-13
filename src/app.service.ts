@@ -4,6 +4,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '@nestjs/config';
 import { TaskService } from './modules/task/task.service';
+import { extractError } from './common/helpers';
 
 @Injectable()
 export class AppService {
@@ -17,23 +18,20 @@ export class AppService {
   }
 
   private readonly URL = this.configService.get<string>(`app.healthUrl`);
-  private readonly tmpServiceURL = 'https://larning-log-j4wm.onrender.com'
+  private readonly tmpServiceURL = 'https://larning-log-j4wm.onrender.com';
 
-  @Cron("0 */3 * * * *") //every 3 minutes
+  @Cron('0 */3 * * * *') //every 3 minutes
   async handleCron() {
     try {
       const response = await firstValueFrom(this.httpService.get(this.URL));
-      const tmpReq = await firstValueFrom(this.httpService.get(this.tmpServiceURL))
-      this.logger.debug(
-        '[MAINTAIN SERVER JOB]: Request successful:',
-        response.data,
+      const tmpReq = await firstValueFrom(
+        this.httpService.get(this.tmpServiceURL),
       );
-      this.logger.debug(
-        '[MAINTAIN TMP-SERVER]: Request successful:',
-        tmpReq?.data,
-      );
-    } catch (error) {
-      this.logger.error('[MAINTAIN SERVER JOB] Error during request:', error);
+      this.logger.debug(`[MAINTAIN SERVER JOB]: ${response.status} OK`);
+      this.logger.debug(`[MAINTAIN TMP-SERVER]: ${tmpReq?.status} OK`);
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(`[MAINTAIN SERVER JOB] Error during request: ${message}`, stack);
     }
   }
 
@@ -42,8 +40,9 @@ export class AppService {
     try {
       await this.taskService.syncTaskData();
       this.logger.debug('[SYNC TASK JOB]: Sync successful:');
-    } catch (error) {
-      this.logger.error('[SYNC TASK JOB] Error during sync:', error);
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(`[SYNC TASK JOB] Error during sync: ${message}`, stack);
     }
   }
 }

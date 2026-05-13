@@ -9,7 +9,7 @@ import {
   UpdateResult,
 } from 'typeorm';
 import { CreateTaskDto } from './dto';
-import { withTransaction } from 'src/common/helpers';
+import { withTransaction, extractError } from 'src/common/helpers';
 import { JiraService } from '../jira/jira.service';
 import { TASK_PAGE_SIZE, TaskState, ReportHeader } from './constants';
 import { escapeHtml } from '../telegram-bot/helpers';
@@ -49,37 +49,63 @@ export class TaskService {
   }
 
   public async bulkUpsert(args: Partial<TaskEntity>[]): Promise<InsertResult> {
-    const data = await withTransaction(this.datasource, async (queryRunner) => {
-      const taskRepository = queryRunner.manager.getRepository(TaskEntity);
-      const data = await taskRepository.upsert(args, {
-        conflictPaths: ['externalId'],
-        upsertType: 'on-conflict-do-update',
-      });
-      return data;
-    });
+    try {
+      const data = await withTransaction(
+        this.datasource,
+        async (queryRunner) => {
+          const taskRepository = queryRunner.manager.getRepository(TaskEntity);
+          const data = await taskRepository.upsert(args, {
+            conflictPaths: ['externalId'],
+            upsertType: 'on-conflict-do-update',
+          });
+          return data;
+        },
+      );
 
-    return data;
+      return data;
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(
+        `Failed to bulk upsert ${args.length} tasks: ${message}`,
+        stack,
+      );
+      throw error;
+    }
   }
 
   public async syncTaskData(): Promise<void> {
-    const data = await this.jiraService.getTasks();
-    const taskData: Partial<TaskEntity>[] = data.issues.map((el) => ({
-      externalId: el.id,
-      key: el.key,
-      state: el.fields.status.name,
-      number: +el.key.toString().replace('WA-', ''),
-      title: el.fields.summary,
-      url: `https://workaxle.atlassian.net/browse/${el.key}`,
-    }));
-    await this.bulkUpsert(taskData);
+    try {
+      const data = await this.jiraService.getTasks();
 
-    const activeExternalIds = data.issues.map((el) => el.id);
-    if (activeExternalIds.length) {
-      const taskRepository = this.datasource.getRepository(TaskEntity);
-      await taskRepository.softDelete({
-        externalId: Not(In(activeExternalIds)),
-        deletedAt: IsNull(),
-      });
+      if (!data?.issues) {
+        this.logger.error('Jira returned invalid response: missing issues');
+        throw new Error('Invalid Jira response');
+      }
+
+      const taskData: Partial<TaskEntity>[] = data.issues.map((el) => ({
+        externalId: el.id,
+        key: el.key,
+        state: el.fields.status.name,
+        number: +el.key.toString().replace('WA-', ''),
+        title: el.fields.summary,
+        url: `https://workaxle.atlassian.net/browse/${el.key}`,
+      }));
+      await this.bulkUpsert(taskData);
+
+      const activeExternalIds = data.issues.map((el) => el.id);
+      if (activeExternalIds.length) {
+        const taskRepository = this.datasource.getRepository(TaskEntity);
+        await taskRepository.softDelete({
+          externalId: Not(In(activeExternalIds)),
+          deletedAt: IsNull(),
+        });
+      }
+
+      this.logger.log(`Synced ${taskData.length} tasks from Jira`);
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(`Failed to sync tasks: ${message}`, stack);
+      throw error;
     }
   }
 
@@ -157,19 +183,34 @@ export class TaskService {
   }
 
   public async generateAutoReport(): Promise<string | null> {
-    const [
-      dirtyTasks,
-      devAnalysisTasks,
-      inProgressTasks,
-      awaitingTasks,
-      blockedTasks,
-    ] = await Promise.all([
-      this.getDirtyTasks(),
-      this.getTasksByState(TaskState.DEV_ANALYSIS),
-      this.getTasksByState(TaskState.IN_PROGRESS),
-      this.getTasksByState(TaskState.AWAITING_CLIENT_FEEDBACK),
-      this.getTasksByState(TaskState.BLOCKED),
-    ]);
+    let dirtyTasks: TaskEntity[],
+      devAnalysisTasks: TaskEntity[],
+      inProgressTasks: TaskEntity[],
+      awaitingTasks: TaskEntity[],
+      blockedTasks: TaskEntity[];
+
+    try {
+      [
+        dirtyTasks,
+        devAnalysisTasks,
+        inProgressTasks,
+        awaitingTasks,
+        blockedTasks,
+      ] = await Promise.all([
+        this.getDirtyTasks(),
+        this.getTasksByState(TaskState.DEV_ANALYSIS),
+        this.getTasksByState(TaskState.IN_PROGRESS),
+        this.getTasksByState(TaskState.AWAITING_CLIENT_FEEDBACK),
+        this.getTasksByState(TaskState.BLOCKED),
+      ]);
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(
+        `Failed to fetch tasks for auto report: ${message}`,
+        stack,
+      );
+      throw error;
+    }
 
     const currentTasks = [...devAnalysisTasks, ...inProgressTasks];
     const sectionIds = new Set(

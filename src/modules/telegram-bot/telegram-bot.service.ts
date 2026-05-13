@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as TelegramBot from 'node-telegram-bot-api';
 import { TaskService } from '../task/task.service';
 import { ScriptRunnerService } from '../script-runner';
-import { forEachPromise } from 'src/common/helpers';
+import { forEachPromise, extractError } from 'src/common/helpers';
 import {
   BotCommands,
   GENERATE_TASK_REPORT_REGEX,
@@ -120,27 +120,32 @@ export class TelegramBotService {
         )
         .then(() => {
           const listener = async (replyMsg: TelegramBot.Message) => {
-            this.bot.sendMessage(replyMsg.chat.id, `Подготавливаю отчет ... `);
-            const taskNumbers = replyMsg.text.split(',');
-            let taskReport = '';
-            await forEachPromise(
-              taskNumbers,
-              async (taskNumber: string, index) => {
-                const current =
-                  await this.taskService.getTaskByKey(+taskNumber);
-                if (!current?.id) {
-                  taskReport += `${index + 1}.Таска номер ${taskNumber} не найдена \n\n`;
-                  return;
-                }
-                const taskInfo = this.taskService.buildTaskReport(current);
-                taskReport += `${index + 1}. ${taskInfo} \n\n`;
-              },
-            );
-            await this.sendHtml(
-              replyMsg.chat.id,
-              `Отчет по таскам \n\n ${taskReport}`,
-            );
-            this.bot.removeTextListener(GENERATE_TASK_REPORT_REGEX);
+            const chatId = replyMsg.chat.id;
+            try {
+              this.bot.sendMessage(chatId, `Подготавливаю отчет ... `);
+              const taskNumbers = replyMsg.text.split(',');
+              let taskReport = '';
+              await forEachPromise(
+                taskNumbers,
+                async (taskNumber: string, index) => {
+                  const current =
+                    await this.taskService.getTaskByKey(+taskNumber);
+                  if (!current?.id) {
+                    taskReport += `${index + 1}.Таска номер ${taskNumber} не найдена \n\n`;
+                    return;
+                  }
+                  const taskInfo = this.taskService.buildTaskReport(current);
+                  taskReport += `${index + 1}. ${taskInfo} \n\n`;
+                },
+              );
+              await this.sendHtml(chatId, `Отчет по таскам \n\n ${taskReport}`);
+            } catch (error: unknown) {
+              const { message, stack } = extractError(error);
+              this.logger.error(`Failed to generate report: ${message}`, stack);
+              this.bot.sendMessage(chatId, 'Ошибка при генерации отчёта');
+            } finally {
+              this.bot.removeTextListener(GENERATE_TASK_REPORT_REGEX);
+            }
           };
           this.bot.onText(GENERATE_TASK_REPORT_REGEX, listener);
         });
@@ -154,10 +159,16 @@ export class TelegramBotService {
     this.bot.onText(BotCommands.LIST, async (msg) => {
       this.trackPrivateChat(msg);
       const chatId = msg.chat.id;
-      const options = await this.generateInlineKeyboard(1);
-      this.bot.sendMessage(chatId, 'Ваши задачи:', {
-        reply_markup: options,
-      });
+      try {
+        const options = await this.generateInlineKeyboard(1);
+        this.bot.sendMessage(chatId, 'Ваши задачи:', {
+          reply_markup: options,
+        });
+      } catch (error: unknown) {
+        const { message, stack } = extractError(error);
+        this.logger.error(`Failed to list tasks: ${message}`, stack);
+        this.bot.sendMessage(chatId, 'Ошибка при загрузке списка задач');
+      }
     });
 
     this.bot.onText(BotCommands.REPORT_AUTO, async (msg) => {
@@ -188,10 +199,11 @@ export class TelegramBotService {
     this.bot.on('callback_query', async (callbackQuery) => {
       const message = callbackQuery.message;
       const chatId = message.chat.id;
-      if (callbackQuery.data === 'help') {
-        this.bot.sendMessage(
-          chatId,
-          `Доступные команды:
+      try {
+        if (callbackQuery.data === 'help') {
+          this.bot.sendMessage(
+            chatId,
+            `Доступные команды:
 /report - отчет по выбранным таскам
 /report_auto - автоотчет по задачам с комментариями
 /jira - меню Jira-скриптов
@@ -200,51 +212,70 @@ export class TelegramBotService {
 
 Обновить комментарий: <номер>: <текст>
 /reset или ---- - сбросить данные, начать новый период`,
-        );
-        return;
-      }
-      if (callbackQuery.data.startsWith('jira_')) {
-        const action = callbackQuery.data.replace('jira_', '');
-        const config = JIRA_SCRIPTS[action];
-        if (!config) return;
+          );
+          return;
+        }
+        if (callbackQuery.data.startsWith('jira_')) {
+          const action = callbackQuery.data.replace('jira_', '');
+          const config = JIRA_SCRIPTS[action];
+          if (!config) return;
 
-        this.bot.answerCallbackQuery(callbackQuery.id);
+          this.bot.answerCallbackQuery(callbackQuery.id);
 
-        if (!config.needsKey) {
-          await this.runJiraScript(chatId, config.script);
+          if (!config.needsKey) {
+            await this.runJiraScript(chatId, config.script);
+            return;
+          }
+
+          this.pendingJiraAction.set(chatId, config.script);
+          this.bot.sendMessage(
+            chatId,
+            'Введите ключ задачи (например, WA-123):',
+            { reply_markup: { force_reply: true } },
+          );
+          return;
+        }
+        if (callbackQuery.data.startsWith('page_')) {
+          const page = parseInt(callbackQuery.data.split('_')[1]);
+
+          const options = await this.generateInlineKeyboard(page);
+
+          this.bot.editMessageText('Ваши задачи:', {
+            chat_id: chatId,
+            message_id: message.message_id,
+            reply_markup: options,
+          });
+
+          return;
+        }
+        if (callbackQuery.data.startsWith('WA_')) {
+          const taskNumber = callbackQuery.data.split('_')[1];
+
+          await this.getTaskHandler(taskNumber, chatId);
+
           return;
         }
 
-        this.pendingJiraAction.set(chatId, config.script);
-        this.bot.sendMessage(
-          chatId,
-          'Введите ключ задачи (например, WA-123):',
-          { reply_markup: { force_reply: true } },
+        this.bot.answerCallbackQuery(callbackQuery.id, { show_alert: false });
+      } catch (error: unknown) {
+        const { message, stack } = extractError(error);
+        this.logger.error(
+          `Callback query error [${callbackQuery.data}]: ${message}`,
+          stack,
         );
-        return;
+        this.bot.sendMessage(chatId, 'Произошла ошибка, попробуйте ещё раз');
       }
-      if (callbackQuery.data.startsWith('page_')) {
-        const page = parseInt(callbackQuery.data.split('_')[1]);
+    });
 
-        const options = await this.generateInlineKeyboard(page);
+    this.bot.on('polling_error', (error: Error) => {
+      this.logger.error(
+        `Telegram polling error: ${error.message}`,
+        error.stack,
+      );
+    });
 
-        this.bot.editMessageText('Ваши задачи:', {
-          chat_id: chatId,
-          message_id: message.message_id,
-          reply_markup: options,
-        });
-
-        return;
-      }
-      if (callbackQuery.data.startsWith('WA_')) {
-        const taskNumber = callbackQuery.data.split('_')[1];
-
-        await this.getTaskHandler(taskNumber, chatId);
-
-        return;
-      }
-
-      this.bot.answerCallbackQuery(callbackQuery.id, { show_alert: false });
+    this.bot.on('error', (error: Error) => {
+      this.logger.error(`Telegram bot error: ${error.message}`, error.stack);
     });
 
     this.bot.on('message', async (msg) => {
@@ -275,80 +306,113 @@ export class TelegramBotService {
   }
 
   private async getTaskHandler(messageText: string, chatId: number) {
-    const task = await this.taskService.getTaskByKey(+messageText);
-    if (!task?.id) {
-      this.bot.sendMessage(chatId, `Таска с таким номером не найдена `);
-      return;
-    }
+    try {
+      const task = await this.taskService.getTaskByKey(+messageText);
+      if (!task?.id) {
+        this.bot.sendMessage(chatId, `Таска с таким номером не найдена `);
+        return;
+      }
 
-    const reply = this.taskService.buildTaskReport(task);
-    await this.sendHtml(chatId, reply);
+      const reply = this.taskService.buildTaskReport(task);
+      await this.sendHtml(chatId, reply);
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(
+        `Failed to get task [${messageText}]: ${message}`,
+        stack,
+      );
+      this.bot.sendMessage(chatId, 'Ошибка при получении задачи');
+    }
   }
 
   private async updateTaskHandler(msg: TelegramBot.Message, chatId: number) {
-    const match = msg.text.match(UPDATE_TASK_COMMENTS_REGEX);
-    const taskNumber = match[1];
-    const rawComment = match[2];
+    try {
+      const match = msg.text.match(UPDATE_TASK_COMMENTS_REGEX);
+      const taskNumber = match[1];
+      const rawComment = match[2];
 
-    const task = await this.taskService.getTaskByKey(+taskNumber);
-    if (!task?.id) {
-      this.bot.sendMessage(chatId, `Таска с таким номером не найдена `);
-      return;
+      const task = await this.taskService.getTaskByKey(+taskNumber);
+      if (!task?.id) {
+        this.bot.sendMessage(chatId, `Таска с таким номером не найдена `);
+        return;
+      }
+
+      const commentOffset = msg.text.length - rawComment.length;
+      const comment = entitiesToHtml(rawComment, msg.entities, commentOffset);
+
+      await this.taskService.update(task.id, {
+        comments: comment,
+        isCommentDirty: true,
+      });
+      this.bot.sendMessage(
+        chatId,
+        `Таска с номером ${taskNumber} успешно обновлена`,
+      );
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(`Failed to update task comment: ${message}`, stack);
+      this.bot.sendMessage(chatId, 'Ошибка при обновлении комментария');
     }
-
-    const commentOffset = msg.text.length - rawComment.length;
-    const comment = entitiesToHtml(rawComment, msg.entities, commentOffset);
-
-    await this.taskService.update(task.id, {
-      comments: comment,
-      isCommentDirty: true,
-    });
-    this.bot.sendMessage(
-      chatId,
-      `Таска с номером ${taskNumber} успешно обновлена`,
-    );
   }
 
   private async reportAutoHandler(chatId: number) {
-    const report = await this.taskService.generateAutoReport();
+    try {
+      const report = await this.taskService.generateAutoReport();
 
-    if (!report) {
-      this.bot.sendMessage(chatId, 'Нет задач с комментариями для отчёта');
-      return;
+      if (!report) {
+        this.bot.sendMessage(chatId, 'Нет задач с комментариями для отчёта');
+        return;
+      }
+
+      await this.sendHtml(chatId, report);
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(`Failed to generate auto report: ${message}`, stack);
+      this.bot.sendMessage(chatId, 'Ошибка при генерации автоотчёта');
     }
-
-    await this.sendHtml(chatId, report);
   }
 
   private async separatorHandler(msg: TelegramBot.Message) {
     const chatId = msg.chat.id;
-    const dirtyTasks = await this.taskService.getDirtyTasks();
+    try {
+      const dirtyTasks = await this.taskService.getDirtyTasks();
 
-    if (!dirtyTasks.length) {
-      this.bot.sendMessage(chatId, 'Нет данных для сброса');
-      return;
+      if (!dirtyTasks.length) {
+        this.bot.sendMessage(chatId, 'Нет данных для сброса');
+        return;
+      }
+
+      await this.taskService.resetDirtyFlags();
+      this.bot.sendMessage(
+        chatId,
+        `———————————————————————————————\nДанные сброшены (${dirtyTasks.length} задач). Новый рабочий период начат.`,
+      );
+
+      const initiator = msg.from?.first_name || 'Кто-то';
+      await this.notifyOtherPrivateChats(
+        chatId,
+        `🔴 ${initiator} сбросил(а) данные для отчёта (${dirtyTasks.length} задач). Новый период начат.`,
+      );
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(`Failed to reset data: ${message}`, stack);
+      this.bot.sendMessage(chatId, 'Ошибка при сбросе данных');
     }
-
-    await this.taskService.resetDirtyFlags();
-    this.bot.sendMessage(
-      chatId,
-      `———————————————————————————————\nДанные сброшены (${dirtyTasks.length} задач). Новый рабочий период начат.`,
-    );
-
-    const initiator = msg.from?.first_name || 'Кто-то';
-    await this.notifyOtherPrivateChats(
-      chatId,
-      `🔴 ${initiator} сбросил(а) данные для отчёта (${dirtyTasks.length} задач). Новый период начат.`,
-    );
   }
 
   private async syncTaskHandler(chatId: number) {
-    this.bot.sendMessage(
-      chatId,
-      'Синхронизирую данные. Сообщу, когда все будет готово',
-    );
-    await this.taskService.syncTaskData();
-    this.bot.sendMessage(chatId, 'Готово');
+    try {
+      this.bot.sendMessage(
+        chatId,
+        'Синхронизирую данные. Сообщу, когда все будет готово',
+      );
+      await this.taskService.syncTaskData();
+      this.bot.sendMessage(chatId, 'Готово');
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(`Failed to sync tasks: ${message}`, stack);
+      this.bot.sendMessage(chatId, 'Ошибка при синхронизации задач');
+    }
   }
 
   private async runJiraScript(
@@ -360,9 +424,9 @@ export class TelegramBotService {
     try {
       const result = await this.scriptRunner.runScript(scriptName, args);
       await this.sendMarkdown(chatId, result || 'Пустой ответ');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Jira script error [${scriptName}]:`, message);
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(`Jira script error [${scriptName}]: ${message}`, stack);
       this.bot.sendMessage(chatId, `Ошибка при выполнении запроса: ${message}`);
     }
   }
@@ -373,7 +437,11 @@ export class TelegramBotService {
         parse_mode: 'Markdown',
         disable_web_page_preview: true,
       });
-    } catch {
+    } catch (error: unknown) {
+      const { message } = extractError(error);
+      this.logger.warn(
+        `Markdown send failed, retrying as plain text: ${message}`,
+      );
       await this.bot.sendMessage(chatId, text, {
         disable_web_page_preview: true,
       });

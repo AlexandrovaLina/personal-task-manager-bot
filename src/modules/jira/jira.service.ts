@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '@nestjs/config';
+import { extractError } from 'src/common/helpers';
 
 @Injectable()
 export class JiraService {
@@ -37,8 +38,9 @@ export class JiraService {
       );
 
       return response.data;
-    } catch (error) {
-      this.logger.error('Error fetching tasks from Jira:', error.message);
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(`Error fetching tasks from Jira: ${message}`, stack);
       throw new Error('Could not fetch tasks from Jira');
     }
   }
