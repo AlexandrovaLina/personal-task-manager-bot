@@ -381,17 +381,40 @@ export class TelegramBotService {
   }
 
   private async sendHtml(chatId: number, text: string): Promise<void> {
-    try {
+    const MAX_LENGTH = 4096;
+
+    if (text.length <= MAX_LENGTH) {
       await this.bot.sendMessage(chatId, text, {
         parse_mode: 'HTML',
         disable_web_page_preview: true,
       });
-    } catch (error) {
-      this.logger.error('HTML parse failed, sending as plain text:', error);
-      await this.bot.sendMessage(chatId, text, {
+      return;
+    }
+
+    const chunks = this.splitMessage(text, MAX_LENGTH);
+    for (const chunk of chunks) {
+      await this.bot.sendMessage(chatId, chunk, {
+        parse_mode: 'HTML',
         disable_web_page_preview: true,
       });
     }
+  }
+
+  private splitMessage(text: string, maxLength: number): string[] {
+    const chunks: string[] = [];
+    let remaining = text;
+
+    while (remaining.length > maxLength) {
+      let splitAt = remaining.lastIndexOf('\n\n', maxLength);
+      if (splitAt <= 0) splitAt = remaining.lastIndexOf('\n', maxLength);
+      if (splitAt <= 0) splitAt = maxLength;
+
+      chunks.push(remaining.slice(0, splitAt));
+      remaining = remaining.slice(splitAt).replace(/^\n+/, '');
+    }
+
+    if (remaining) chunks.push(remaining);
+    return chunks;
   }
 
   private async generateInlineKeyboard(
