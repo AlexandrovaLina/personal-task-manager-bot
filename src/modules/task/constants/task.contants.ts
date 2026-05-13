@@ -8,8 +8,8 @@ export enum TaskState {
 }
 
 export enum ReportHeader {
-  TITLE = '*-= Отчет по таскам=-*',
-  CURRENT = '*‼️-=Текущие задачи=-‼️*',
-  ADDITIONAL = '*-= Доп Инфа =-*',
-  BLOCKED = '*-= Инфа по заблоченным таскам =-*',
+  TITLE = '<b>-= Отчет по таскам=-</b>',
+  CURRENT = '<b>‼️-=Текущие задачи=-‼️</b>',
+  ADDITIONAL = '<b>-= Доп Инфа =-</b>',
+  BLOCKED = '<b>-= Инфа по заблоченным таскам =-</b>',
 }

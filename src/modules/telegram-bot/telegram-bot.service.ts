@@ -13,6 +13,7 @@ import {
 } from './constants';
 import { TaskEntity } from '../task/task.entity';
 import { TASK_PAGE_SIZE } from '../task/constants';
+import { entitiesToHtml } from './helpers';
 
 const JIRA_SCRIPTS = {
   report24: {
@@ -95,7 +96,7 @@ export class TelegramBotService {
 
     this.bot.onText(UPDATE_TASK_COMMENTS_REGEX, async (msg) => {
       this.trackPrivateChat(msg);
-      await this.updateTaskHandler(msg.text, msg.chat.id);
+      await this.updateTaskHandler(msg, msg.chat.id);
     });
 
     this.bot.onText(BotCommands.START, (msg) => {
@@ -135,10 +136,9 @@ export class TelegramBotService {
                 taskReport += `${index + 1}. ${taskInfo} \n\n`;
               },
             );
-            this.bot.sendMessage(
+            await this.sendHtml(
               replyMsg.chat.id,
               `Отчет по таскам \n\n ${taskReport}`,
-              { parse_mode: 'Markdown' },
             );
             this.bot.removeTextListener(GENERATE_TASK_REPORT_REGEX);
           };
@@ -282,19 +282,22 @@ export class TelegramBotService {
     }
 
     const reply = this.taskService.buildTaskReport(task);
-    this.bot.sendMessage(chatId, reply, { parse_mode: 'Markdown' });
+    await this.sendHtml(chatId, reply);
   }
 
-  private async updateTaskHandler(messageText: string, chatId: number) {
-    const match = messageText.match(UPDATE_TASK_COMMENTS_REGEX);
+  private async updateTaskHandler(msg: TelegramBot.Message, chatId: number) {
+    const match = msg.text.match(UPDATE_TASK_COMMENTS_REGEX);
     const taskNumber = match[1];
-    const comment = match[2];
+    const rawComment = match[2];
 
     const task = await this.taskService.getTaskByKey(+taskNumber);
     if (!task?.id) {
       this.bot.sendMessage(chatId, `Таска с таким номером не найдена `);
       return;
     }
+
+    const commentOffset = msg.text.length - rawComment.length;
+    const comment = entitiesToHtml(rawComment, msg.entities, commentOffset);
 
     await this.taskService.update(task.id, {
       comments: comment,
@@ -314,7 +317,7 @@ export class TelegramBotService {
       return;
     }
 
-    this.bot.sendMessage(chatId, report, { parse_mode: 'Markdown' });
+    await this.sendHtml(chatId, report);
   }
 
   private async separatorHandler(msg: TelegramBot.Message) {
@@ -356,14 +359,38 @@ export class TelegramBotService {
     this.bot.sendMessage(chatId, 'Загружаю данные из Jira...');
     try {
       const result = await this.scriptRunner.runScript(scriptName, args);
-      await this.bot.sendMessage(chatId, result || 'Пустой ответ', {
-        parse_mode: 'Markdown',
-        disable_web_page_preview: true,
-      });
+      await this.sendMarkdown(chatId, result || 'Пустой ответ');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Jira script error [${scriptName}]:`, message);
       this.bot.sendMessage(chatId, `Ошибка при выполнении запроса: ${message}`);
+    }
+  }
+
+  private async sendMarkdown(chatId: number, text: string): Promise<void> {
+    try {
+      await this.bot.sendMessage(chatId, text, {
+        parse_mode: 'Markdown',
+        disable_web_page_preview: true,
+      });
+    } catch {
+      await this.bot.sendMessage(chatId, text, {
+        disable_web_page_preview: true,
+      });
+    }
+  }
+
+  private async sendHtml(chatId: number, text: string): Promise<void> {
+    try {
+      await this.bot.sendMessage(chatId, text, {
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+      });
+    } catch (error) {
+      this.logger.error('HTML parse failed, sending as plain text:', error);
+      await this.bot.sendMessage(chatId, text, {
+        disable_web_page_preview: true,
+      });
     }
   }
 

@@ -5,7 +5,7 @@ import { CreateTaskDto } from './dto';
 import { withTransaction } from 'src/common/helpers';
 import { JiraService } from '../jira/jira.service';
 import { TASK_PAGE_SIZE, TaskState, ReportHeader } from './constants';
-import { taskTitleFormatter, escapeMarkdown } from './helpers';
+import { escapeHtml } from '../telegram-bot/helpers';
 
 @Injectable()
 export class TaskService {
@@ -93,10 +93,9 @@ export class TaskService {
   }
 
   public buildTaskReport(task: TaskEntity): string {
-    const comments = task.comments
-      ? escapeMarkdown(task.comments)
-      : 'Отсутствуют';
-    const report = `Таска [WA-${task.number}: ${taskTitleFormatter(task.title)}](${task.url})\nСтатус - ${task.state} \nКомментарии - ${comments}`;
+    const comments = task.comments || 'Отсутствуют';
+    const title = escapeHtml(task.title);
+    const report = `Таска <a href="${task.url}">WA-${task.number}: ${title}</a>\nСтатус - ${task.state}\nКомментарии - ${comments}`;
     return report;
   }
 
