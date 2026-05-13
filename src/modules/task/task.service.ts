@@ -1,6 +1,13 @@
 import { TaskEntity } from './task.entity';
 import { Injectable, Logger } from '@nestjs/common';
-import { DataSource, InsertResult, IsNull, UpdateResult } from 'typeorm';
+import {
+  DataSource,
+  InsertResult,
+  IsNull,
+  Not,
+  In,
+  UpdateResult,
+} from 'typeorm';
 import { CreateTaskDto } from './dto';
 import { withTransaction } from 'src/common/helpers';
 import { JiraService } from '../jira/jira.service';
@@ -65,6 +72,15 @@ export class TaskService {
       url: `https://workaxle.atlassian.net/browse/${el.key}`,
     }));
     await this.bulkUpsert(taskData);
+
+    const activeExternalIds = data.issues.map((el) => el.id);
+    if (activeExternalIds.length) {
+      const taskRepository = this.datasource.getRepository(TaskEntity);
+      await taskRepository.softDelete({
+        externalId: Not(In(activeExternalIds)),
+        deletedAt: IsNull(),
+      });
+    }
   }
 
   public async getTaskByKey(key: number): Promise<TaskEntity | null> {
