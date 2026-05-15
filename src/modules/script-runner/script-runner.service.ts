@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { execFile } from 'child_process';
 import { join } from 'path';
 
-const TELEGRAM_MESSAGE_LIMIT = 4096;
 const SCRIPT_TIMEOUT_MS = 30_000;
 
 @Injectable()
@@ -50,14 +49,7 @@ export class ScriptRunnerService {
             return;
           }
 
-          let output = stdout.trim();
-          if (output.length > TELEGRAM_MESSAGE_LIMIT) {
-            output =
-              output.substring(0, TELEGRAM_MESSAGE_LIMIT - 30) +
-              '\n\n... (обрезано)';
-          }
-
-          resolve(output);
+          resolve(stdout.trim());
         },
       );
     });

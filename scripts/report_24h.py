@@ -59,8 +59,11 @@ def fmt_prs(prs):
 
 def extract_text(node):
     if isinstance(node, dict):
-        if node.get('type') == 'text':
+        t = node.get('type')
+        if t == 'text':
             return node.get('text', '')
+        if t == 'mention':
+            return node.get('attrs', {}).get('text', '')
         return ' '.join(extract_text(c) for c in node.get('content', []))
     return ''
 

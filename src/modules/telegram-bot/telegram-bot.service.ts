@@ -482,19 +482,25 @@ export class TelegramBotService {
   }
 
   private async sendMarkdown(chatId: number, text: string): Promise<void> {
-    try {
-      await this.bot.sendMessage(chatId, text, {
-        parse_mode: 'Markdown',
-        disable_web_page_preview: true,
-      });
-    } catch (error: unknown) {
-      const { message } = extractError(error);
-      this.logger.warn(
-        `Markdown send failed, retrying as plain text: ${message}`,
-      );
-      await this.bot.sendMessage(chatId, text, {
-        disable_web_page_preview: true,
-      });
+    const MAX_LENGTH = 4096;
+    const chunks =
+      text.length <= MAX_LENGTH ? [text] : this.splitMessage(text, MAX_LENGTH);
+
+    for (const chunk of chunks) {
+      try {
+        await this.bot.sendMessage(chatId, chunk, {
+          parse_mode: 'Markdown',
+          disable_web_page_preview: true,
+        });
+      } catch (error: unknown) {
+        const { message } = extractError(error);
+        this.logger.warn(
+          `Markdown send failed, retrying as plain text: ${message}`,
+        );
+        await this.bot.sendMessage(chatId, chunk, {
+          disable_web_page_preview: true,
+        });
+      }
     }
   }
 

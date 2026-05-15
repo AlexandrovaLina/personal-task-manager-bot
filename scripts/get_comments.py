@@ -17,6 +17,8 @@ def extract_text(node):
     if isinstance(node, dict):
         if node.get('type') == 'text':
             return node.get('text', '')
+        if node.get('type') == 'mention':
+            return node.get('attrs', {}).get('text', '')
         if node.get('type') == 'hardBreak':
             return '\n'
         text = ''
