@@ -346,7 +346,10 @@ export class TelegramBotService {
 
       const task = await this.taskService.getTaskByKey(taskNumber);
       if (!task?.id) {
-        this.bot.sendMessage(chatId, `Таска с таким номером не найдена`);
+        this.bot.sendMessage(
+          chatId,
+          `❗️❗️❗️ Таска с таким номером не найдена ❗️❗️❗️`,
+        );
         return;
       }
 
@@ -383,7 +386,10 @@ export class TelegramBotService {
 
       const task = await this.taskService.getTaskByKey(+taskNumber);
       if (!task?.id) {
-        this.bot.sendMessage(chatId, `Таска с таким номером не найдена `);
+        this.bot.sendMessage(
+          chatId,
+          `❗️❗️❗️ Таска с таким номером не найдена ❗️❗️❗️`,
+        );
         return;
       }
 
