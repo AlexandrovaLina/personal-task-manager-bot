@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as TelegramBot from 'node-telegram-bot-api';
 import { TaskService } from '../task/task.service';
 import { ScriptRunnerService } from '../script-runner';
+import { CalendarService } from '../calendar/calendar.service';
 import { forEachPromise, extractError } from 'src/common/helpers';
 import {
   BotCommands,
@@ -53,6 +54,7 @@ export class TelegramBotService {
     private readonly configService: ConfigService,
     private readonly taskService: TaskService,
     private readonly scriptRunner: ScriptRunnerService,
+    private readonly calendarService: CalendarService,
   ) {
     this.logger = new Logger(TelegramBotService.name);
     this.bot = new TelegramBot(
@@ -75,10 +77,19 @@ export class TelegramBotService {
         command: 'report_auto',
         description: 'Автоотчет по задачам с комментариями',
       },
+      {
+        command: 'report_auto_sprint',
+        description: 'Автоотчет по задачам текущего спринта',
+      },
       { command: 'reset', description: 'Сбросить данные, начать новый период' },
       {
         command: 'jira',
         description: 'Jira: отчёт, детали, комментарии и др.',
+      },
+      { command: 'calls', description: 'Созвоны на сегодня' },
+      {
+        command: 'sync_calls',
+        description: 'Синхронизация созвонов из календаря',
       },
       {
         command: 'hidden',
@@ -178,6 +189,11 @@ export class TelegramBotService {
       await this.syncTaskHandler(msg.chat.id);
     });
 
+    this.bot.onText(BotCommands.SYNC_CALLS, async (msg) => {
+      this.trackPrivateChat(msg);
+      await this.syncCallsHandler(msg.chat.id);
+    });
+
     this.bot.onText(BotCommands.LIST, async (msg) => {
       this.trackPrivateChat(msg);
       const chatId = msg.chat.id;
@@ -198,6 +214,11 @@ export class TelegramBotService {
       await this.reportAutoHandler(msg.chat.id);
     });
 
+    this.bot.onText(BotCommands.REPORT_AUTO_SPRINT, async (msg) => {
+      this.trackPrivateChat(msg);
+      await this.reportAutoHandler(msg.chat.id, true);
+    });
+
     this.bot.onText(BotCommands.RESET, async (msg) => {
       this.trackPrivateChat(msg);
       await this.separatorHandler(msg);
@@ -206,6 +227,11 @@ export class TelegramBotService {
     this.bot.onText(SEPARATOR_REGEX, async (msg) => {
       this.trackPrivateChat(msg);
       await this.separatorHandler(msg);
+    });
+
+    this.bot.onText(BotCommands.CALLS, async (msg) => {
+      this.trackPrivateChat(msg);
+      await this.callsHandler(msg.chat.id);
     });
 
     this.bot.onText(BotCommands.HIDDEN, async (msg) => {
@@ -233,7 +259,10 @@ export class TelegramBotService {
             `Доступные команды:
 /report - отчет по выбранным таскам
 /report_auto - автоотчет по задачам с комментариями
+/report_auto_sprint - автоотчет по задачам текущего спринта
 /jira - меню Jira-скриптов
+/calls - созвоны на сегодня
+/sync_calls - синхронизация созвонов из календаря
 /list - список задач
 /hidden - видимость заблокированных/ожидающих задач в автоотчёте
 /sync - синхронизация из Jira
@@ -432,9 +461,10 @@ export class TelegramBotService {
     }
   }
 
-  private async reportAutoHandler(chatId: number) {
+  private async reportAutoHandler(chatId: number, currentSprintOnly = false) {
     try {
-      const report = await this.taskService.generateAutoReport();
+      const report =
+        await this.taskService.generateAutoReport(currentSprintOnly);
 
       if (!report) {
         this.bot.sendMessage(chatId, 'Нет задач с комментариями для отчёта');
@@ -516,6 +546,41 @@ export class TelegramBotService {
         },
       ]),
     };
+  }
+
+  private async callsHandler(chatId: number) {
+    try {
+      const meetings = await this.calendarService.getTodayMeetings();
+      const digest = this.calendarService.buildDigest(
+        meetings,
+        'Созвоны сегодня:',
+      );
+
+      await this.sendHtml(chatId, digest);
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(`Failed to fetch today's meetings: ${message}`, stack);
+      this.bot.sendMessage(chatId, 'Ошибка при получении списка созвонов');
+    }
+  }
+
+  private async syncCallsHandler(chatId: number) {
+    try {
+      this.bot.sendMessage(chatId, 'Синхронизирую созвоны из календаря...');
+      await this.calendarService.syncMeetings();
+      this.bot.sendMessage(chatId, 'Готово');
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(`Failed to sync calendar meetings: ${message}`, stack);
+      this.bot.sendMessage(chatId, 'Ошибка при синхронизации созвонов');
+    }
+  }
+
+  public async sendOwnerMessage(text: string): Promise<void> {
+    const ownerChatId = this.configService.get<number>(
+      'telegram-bot.ownerChatId',
+    );
+    await this.sendHtml(ownerChatId, text);
   }
 
   private async separatorHandler(msg: TelegramBot.Message) {

@@ -3,5 +3,11 @@ import { TaskEntity } from '../task.entity';
 
 export type CreateTaskPayloadData = Optional<
   TaskEntity,
-  'id' | 'createdAt' | 'deletedAt' | 'updatedAt' | 'isCommentDirty' | 'isHidden'
+  | 'id'
+  | 'createdAt'
+  | 'deletedAt'
+  | 'updatedAt'
+  | 'isCommentDirty'
+  | 'isCurrentSprint'
+  | 'isHidden'
 >;

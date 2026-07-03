@@ -17,16 +17,13 @@ endif
 DOCKER_COMPOSE := docker-compose $(DOCKER_COMPOSE_FILES) --project-name $(PROJECT_NAME)
 DOCKER_COMPOSE_RUN := $(DOCKER_COMPOSE) $(RUN)
 
-provision: rebuild-docker install build migrate
+provision: rebuild-docker install build migrate dump-schema
 
 sh:
 	${DOCKER_COMPOSE_RUN} -e "NODE_ENV=${NODE_ENV}" app /bin/sh
 	
 run:
 	${DOCKER_COMPOSE_RUN} -e "NODE_ENV=${NODE_ENV}" --service-ports db
-
-down:
-	${DOCKER_COMPOSE} down
 
 build:
 	${DOCKER_COMPOSE} build
@@ -39,6 +36,9 @@ app:
 
 migrate:
 	${DOCKER_COMPOSE_RUN} -e "NODE_ENV=${NODE_ENV}" app npm run migration:up
+
+dump-schema:
+	${DOCKER_COMPOSE_RUN} app pg_dump -h db -U postgres bot_${NODE_ENV} -s -x -O -f db/schema.sql
 
 down:
 	${DOCKER_COMPOSE} down

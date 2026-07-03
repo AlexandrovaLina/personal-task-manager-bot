@@ -44,5 +44,9 @@ export class CreateTaskDto implements CreateTaskPayloadData {
 
   @IsOptional()
   @IsBoolean()
+  public isCurrentSprint?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   public isHidden?: boolean;
 }

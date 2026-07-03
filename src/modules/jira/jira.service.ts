@@ -34,7 +34,7 @@ export class JiraService {
       const body = {
         jql: `project=${this.projectKey} AND assignee=currentUser() AND updated >= -${this.updatedWindowDays}d ORDER BY updated DESC`,
         maxResults: this.maxResults,
-        fields: ['summary', 'status'],
+        fields: ['summary', 'status', 'customfield_10020'],
       };
 
       const response = await firstValueFrom(

@@ -2,9 +2,16 @@ export interface JiraIssueStatus {
   name: string;
 }
 
+export interface JiraSprint {
+  id: number;
+  name: string;
+  state: string;
+}
+
 export interface JiraIssueFields {
   summary: string;
   status: JiraIssueStatus;
+  customfield_10020?: JiraSprint[] | null;
 }
 
 export interface JiraIssue {

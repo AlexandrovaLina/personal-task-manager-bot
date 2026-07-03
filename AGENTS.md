@@ -181,6 +181,7 @@ make app
 | `make sh`             | Shell в контейнере                         |
 | `make install`        | npm install                                |
 | `make migrate`        | Выполнить миграции                         |
+| `make dump-schema`    | Сдампить схему БД (без данных) в db/schema.sql |
 | `make migration-create name=...` | Создать пустую миграцию           |
 | `make migration-generate name=...` | Сгенерировать миграцию из diff  |
 | `make migration-up`   | Применить миграции                         |
