@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict tca39FuodkwHFhS3IQlnGC0tx0raQ9UrotQ6OsaUz9DvHvkkAN3RFO3d8fbTYsx
+\restrict 1vee7WOjCeJ5dSieipd2djZT4iNYbj7anJV1eK15D0hGGkuIIWswn46EibLQk2l
 
 -- Dumped from database version 11.14
 -- Dumped by pg_dump version 18.4
@@ -55,6 +55,25 @@ COMMENT ON EXTENSION "uuid-ossp" IS 'generate universally unique identifiers (UU
 
 
 SET default_tablespace = '';
+
+--
+-- Name: meetings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.meetings (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    external_id text NOT NULL,
+    subject text NOT NULL,
+    start_at timestamp with time zone NOT NULL,
+    end_at timestamp with time zone NOT NULL,
+    join_url text,
+    location text,
+    content_hash text NOT NULL,
+    created_at timestamp(3) with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp(3) with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp(3) with time zone
+);
+
 
 --
 -- Name: migrations; Type: TABLE; Schema: public; Owner: -
@@ -131,6 +150,22 @@ ALTER TABLE ONLY public.tasks
 
 
 --
+-- Name: meetings PK_aa73be861afa77eb4ed31f3ed57; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.meetings
+    ADD CONSTRAINT "PK_aa73be861afa77eb4ed31f3ed57" PRIMARY KEY (id);
+
+
+--
+-- Name: meetings UQ_1c2dc28d2d5e306a727dbafb864; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.meetings
+    ADD CONSTRAINT "UQ_1c2dc28d2d5e306a727dbafb864" UNIQUE (external_id);
+
+
+--
 -- Name: tasks UQ_4605d60dbb18119788f4627052a; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -142,5 +177,5 @@ ALTER TABLE ONLY public.tasks
 -- PostgreSQL database dump complete
 --
 
-\unrestrict tca39FuodkwHFhS3IQlnGC0tx0raQ9UrotQ6OsaUz9DvHvkkAN3RFO3d8fbTYsx
+\unrestrict 1vee7WOjCeJ5dSieipd2djZT4iNYbj7anJV1eK15D0hGGkuIIWswn46EibLQk2l
 

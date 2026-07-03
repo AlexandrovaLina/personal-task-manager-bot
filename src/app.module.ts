@@ -5,9 +5,11 @@ import { TelegramBotModule } from './modules/telegram-bot/telegram-bot.module';
 import { JiraModule } from './modules/jira/jira.module';
 import telegramConfig from './config/telegram.config';
 import jiraConfig from './config/jira.config';
+import calendarConfig from './config/calendar.config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSourceOptions } from 'typeorm';
 import { TaskModule } from './modules/task/task.module';
+import { CalendarModule } from './modules/calendar/calendar.module';
 import dbConfig from 'db/config/db-config';
 import appConfig from './config/app.config';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -26,7 +28,7 @@ import { pinoPrettyConfig } from './config/pino-pretty.config';
       ],
       isGlobal: true,
       cache: true,
-      load: [telegramConfig, jiraConfig, dbConfig, appConfig],
+      load: [telegramConfig, jiraConfig, dbConfig, appConfig, calendarConfig],
     }),
     LoggerModule.forRoot({
       pinoHttp: {
@@ -46,6 +48,7 @@ import { pinoPrettyConfig } from './config/pino-pretty.config';
     TelegramBotModule,
     JiraModule,
     TaskModule,
+    CalendarModule,
   ],
   providers: [AppService, Logger],
   controllers: [HealthController],
