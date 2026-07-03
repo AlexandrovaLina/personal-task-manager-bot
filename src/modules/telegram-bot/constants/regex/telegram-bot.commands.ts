@@ -6,4 +6,5 @@ export const BotCommands = {
   SYNC: /\/sync/,
   LIST: /\/list/,
   JIRA: /\/jira/,
+  HIDDEN: /\/hidden/,
 };
