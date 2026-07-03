@@ -9,4 +9,5 @@ export type CreateTaskPayloadData = Optional<
   | 'updatedAt'
   | 'isCommentDirty'
   | 'isCurrentSprint'
+  | 'isHidden'
 >;

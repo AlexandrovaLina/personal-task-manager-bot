@@ -13,3 +13,8 @@ export enum ReportHeader {
   ADDITIONAL = '<b>-= Доп Инфа =-</b>',
   BLOCKED = '<b>-= Инфа по заблоченным таскам =-</b>',
 }
+
+export const HIDEABLE_STATES: readonly string[] = [
+  TaskState.AWAITING_CLIENT_FEEDBACK,
+  TaskState.BLOCKED,
+];

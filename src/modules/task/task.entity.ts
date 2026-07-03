@@ -27,4 +27,7 @@ export class TaskEntity extends BaseEntity {
 
   @Column({ type: 'boolean', default: false })
   public isCurrentSprint: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  public isHidden: boolean;
 }

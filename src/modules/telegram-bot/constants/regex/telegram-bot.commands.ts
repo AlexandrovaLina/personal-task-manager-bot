@@ -9,4 +9,5 @@ export const BotCommands = {
   JIRA: /\/jira/,
   CALLS: /\/calls/,
   SYNC_CALLS: /\/sync_calls/,
+  HIDDEN: /\/hidden/,
 };
