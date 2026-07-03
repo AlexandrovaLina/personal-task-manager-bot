@@ -111,6 +111,7 @@ export class TaskService {
             number: +issue.key.replace('WA-', ''),
             title: issue.fields.summary,
             url: `https://workaxle.atlassian.net/browse/${issue.key}`,
+            deletedAt: null,
             isHidden: this.resolveIsHidden(
               state,
               existingByExternalId.get(issue.id),

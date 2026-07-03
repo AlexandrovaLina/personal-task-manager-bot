@@ -20,6 +20,9 @@ export class JiraService {
   private readonly projectKey =
     this.configService.get<string>(`jira.projectKey`);
 
+  private readonly maxResults = 100;
+  private readonly updatedWindowDays = 90;
+
   public async getTasks(): Promise<JiraSearchResponse> {
     try {
       const url = `${this.baseUrl}/search/jql`;
@@ -29,14 +32,22 @@ export class JiraService {
         'Content-Type': 'application/json',
       };
       const body = {
-        jql: `project=${this.projectKey} AND assignee=currentUser() ORDER BY updated DESC`,
-        maxResults: 100,
+        jql: `project=${this.projectKey} AND assignee=currentUser() AND updated >= -${this.updatedWindowDays}d ORDER BY updated DESC`,
+        maxResults: this.maxResults,
         fields: ['summary', 'status'],
       };
 
       const response = await firstValueFrom(
         this.httpService.post<JiraSearchResponse>(url, body, { headers }),
       );
+
+      if (response.data?.issues?.length === this.maxResults) {
+        this.logger.warn(
+          `Jira returned ${this.maxResults} issues (page limit) for the last ` +
+            `${this.updatedWindowDays} days — result may be truncated and ` +
+            `tasks outside the page risk being soft-deleted. Consider pagination.`,
+        );
+      }
 
       return response.data;
     } catch (error: unknown) {
