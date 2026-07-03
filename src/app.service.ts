@@ -73,7 +73,7 @@ export class AppService {
     }
   }
 
-  @Cron(CronExpression.EVERY_30_MINUTES)
+  @Cron('0 */30 * * * 1-5') // every 30 minutes, Mon-Fri only
   async handleMeetingsSyncCron() {
     try {
       const { changed, cancelled } = await this.calendarService.syncMeetings();
