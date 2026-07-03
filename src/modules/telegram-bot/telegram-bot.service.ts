@@ -80,6 +80,10 @@ export class TelegramBotService {
         command: 'jira',
         description: 'Jira: отчёт, детали, комментарии и др.',
       },
+      {
+        command: 'hidden',
+        description: 'Видимость заблокированных/ожидающих задач в автоотчёте',
+      },
     ]);
 
     const mainMenu = {
@@ -204,6 +208,11 @@ export class TelegramBotService {
       await this.separatorHandler(msg);
     });
 
+    this.bot.onText(BotCommands.HIDDEN, async (msg) => {
+      this.trackPrivateChat(msg);
+      await this.hiddenHandler(msg.chat.id);
+    });
+
     this.bot.onText(BotCommands.JIRA, (msg) => {
       this.trackPrivateChat(msg);
       const keyboard = Object.entries(JIRA_SCRIPTS).map(([key, { label }]) => [
@@ -226,6 +235,7 @@ export class TelegramBotService {
 /report_auto - автоотчет по задачам с комментариями
 /jira - меню Jira-скриптов
 /list - список задач
+/hidden - видимость заблокированных/ожидающих задач в автоотчёте
 /sync - синхронизация из Jira
 
 Обновить комментарий: <номер>: <текст>
@@ -271,6 +281,17 @@ export class TelegramBotService {
           const taskNumber = callbackQuery.data.split('_')[1];
 
           await this.getTaskHandler(taskNumber, chatId);
+
+          return;
+        }
+        if (callbackQuery.data.startsWith('hide_')) {
+          const taskNumber = parseInt(callbackQuery.data.split('_')[1], 10);
+          await this.toggleHiddenHandler(
+            taskNumber,
+            chatId,
+            message.message_id,
+            callbackQuery.id,
+          );
 
           return;
         }
@@ -426,6 +447,75 @@ export class TelegramBotService {
       this.logger.error(`Failed to generate auto report: ${message}`, stack);
       this.bot.sendMessage(chatId, 'Ошибка при генерации автоотчёта');
     }
+  }
+
+  private async hiddenHandler(chatId: number) {
+    try {
+      const keyboard = await this.buildHiddenKeyboard();
+
+      if (!keyboard.inline_keyboard.length) {
+        this.bot.sendMessage(
+          chatId,
+          'Нет задач в статусах Awaiting Client Feedback / Blocked',
+        );
+        return;
+      }
+
+      this.bot.sendMessage(
+        chatId,
+        '🙈 — скрыта из автоотчёта, 👁 — показывается.\nНажмите на задачу, чтобы переключить видимость:',
+        { reply_markup: keyboard },
+      );
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(`Failed to build hidden tasks menu: ${message}`, stack);
+      this.bot.sendMessage(chatId, 'Ошибка при загрузке списка задач');
+    }
+  }
+
+  private async toggleHiddenHandler(
+    taskNumber: number,
+    chatId: number,
+    messageId: number,
+    callbackQueryId: string,
+  ) {
+    if (!Number.isInteger(taskNumber) || taskNumber <= 0) return;
+
+    const task = await this.taskService.getTaskByKey(taskNumber);
+    if (!task?.id) {
+      this.bot.answerCallbackQuery(callbackQueryId, {
+        text: 'Задача не найдена',
+        show_alert: true,
+      });
+      return;
+    }
+
+    await this.taskService.setTaskHidden(task.id, !task.isHidden);
+
+    this.bot.answerCallbackQuery(callbackQueryId, {
+      text: task.isHidden
+        ? `WA-${task.number} теперь в автоотчёте`
+        : `WA-${task.number} скрыта из автоотчёта`,
+    });
+
+    const keyboard = await this.buildHiddenKeyboard();
+    this.bot.editMessageReplyMarkup(keyboard, {
+      chat_id: chatId,
+      message_id: messageId,
+    });
+  }
+
+  private async buildHiddenKeyboard(): Promise<TelegramBot.InlineKeyboardMarkup> {
+    const tasks = await this.taskService.getHideableTasks();
+
+    return {
+      inline_keyboard: tasks.map((task: TaskEntity) => [
+        {
+          text: `${task.isHidden ? '🙈' : '👁'} WA-${task.number}: ${task.title}`,
+          callback_data: `hide_${task.number}`,
+        },
+      ]),
+    };
   }
 
   private async separatorHandler(msg: TelegramBot.Message) {

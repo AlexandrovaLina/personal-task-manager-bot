@@ -12,7 +12,12 @@ import { CreateTaskDto } from './dto';
 import { withTransaction, extractError } from 'src/common/helpers';
 import { JiraService } from '../jira/jira.service';
 import { JiraIssue } from '../jira/interfaces';
-import { TASK_PAGE_SIZE, TaskState, ReportHeader } from './constants';
+import {
+  TASK_PAGE_SIZE,
+  TaskState,
+  ReportHeader,
+  HIDEABLE_STATES,
+} from './constants';
 import { escapeHtml } from '../telegram-bot/helpers';
 
 @Injectable()
@@ -83,21 +88,39 @@ export class TaskService {
         throw new Error('Invalid Jira response');
       }
 
+      const taskRepository = this.datasource.getRepository(TaskEntity);
+
+      const activeExternalIds = data.issues.map((issue: JiraIssue) => issue.id);
+      const existingTasks = activeExternalIds.length
+        ? await taskRepository.find({
+            where: { externalId: In(activeExternalIds) },
+            withDeleted: true,
+          })
+        : [];
+      const existingByExternalId = new Map(
+        existingTasks.map((task) => [task.externalId, task]),
+      );
+
       const taskData: Partial<TaskEntity>[] = data.issues.map(
-        (issue: JiraIssue) => ({
-          externalId: issue.id,
-          key: issue.key,
-          state: issue.fields.status.name,
-          number: +issue.key.replace('WA-', ''),
-          title: issue.fields.summary,
-          url: `https://workaxle.atlassian.net/browse/${issue.key}`,
-        }),
+        (issue: JiraIssue) => {
+          const state = issue.fields.status.name;
+
+          return {
+            externalId: issue.id,
+            state,
+            number: +issue.key.replace('WA-', ''),
+            title: issue.fields.summary,
+            url: `https://workaxle.atlassian.net/browse/${issue.key}`,
+            isHidden: this.resolveIsHidden(
+              state,
+              existingByExternalId.get(issue.id),
+            ),
+          };
+        },
       );
       await this.bulkUpsert(taskData);
 
-      const activeExternalIds = data.issues.map((issue: JiraIssue) => issue.id);
       if (activeExternalIds.length) {
-        const taskRepository = this.datasource.getRepository(TaskEntity);
         await taskRepository.softDelete({
           externalId: Not(In(activeExternalIds)),
           deletedAt: IsNull(),
@@ -171,6 +194,32 @@ export class TaskService {
     });
   }
 
+  public async getHideableTasks(): Promise<TaskEntity[]> {
+    const taskRepository = this.datasource.getRepository(TaskEntity);
+
+    return taskRepository.find({
+      where: { state: In([...HIDEABLE_STATES]), deletedAt: IsNull() },
+      order: { number: 'DESC' },
+    });
+  }
+
+  public async setTaskHidden(
+    id: string,
+    isHidden: boolean,
+  ): Promise<UpdateResult> {
+    return this.update(id, { isHidden });
+  }
+
+  private resolveIsHidden(state: string, existing?: TaskEntity): boolean {
+    if (!HIDEABLE_STATES.includes(state)) return false;
+
+    if (existing && HIDEABLE_STATES.includes(existing.state)) {
+      return existing.isHidden;
+    }
+
+    return true;
+  }
+
   private buildSection(
     tasks: TaskEntity[],
     counter: { value: number },
@@ -216,6 +265,10 @@ export class TaskService {
     }
 
     const currentTasks = [...devAnalysisTasks, ...inProgressTasks];
+
+    const visibleAwaitingTasks = awaitingTasks.filter((t) => !t.isHidden);
+    const visibleBlockedTasks = blockedTasks.filter((t) => !t.isHidden);
+
     const sectionIds = new Set(
       [...currentTasks, ...awaitingTasks, ...blockedTasks].map((t) => t.id),
     );
@@ -225,8 +278,8 @@ export class TaskService {
     const sections = [
       this.buildSection(mainTasks, counter),
       this.buildSection(currentTasks, counter, ReportHeader.CURRENT),
-      this.buildSection(awaitingTasks, counter, ReportHeader.ADDITIONAL),
-      this.buildSection(blockedTasks, counter, ReportHeader.BLOCKED),
+      this.buildSection(visibleAwaitingTasks, counter, ReportHeader.ADDITIONAL),
+      this.buildSection(visibleBlockedTasks, counter, ReportHeader.BLOCKED),
     ].filter(Boolean);
 
     if (!sections.length) return null;
