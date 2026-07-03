@@ -36,12 +36,6 @@ import { pinoPrettyConfig } from './config/pino-pretty.config';
         transport: pinoPrettyConfig,
       },
     }),
-    LoggerModule.forRoot({
-      pinoHttp: {
-        level: process.env.NODE_ENV !== 'production' ? 'debug' : 'info',
-        transport: pinoPrettyConfig,
-      },
-    }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
