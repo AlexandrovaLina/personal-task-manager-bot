@@ -1,11 +1,19 @@
 import { TaskEntity } from './task.entity';
 import { Injectable, Logger } from '@nestjs/common';
-import { DataSource, InsertResult, UpdateResult } from 'typeorm';
+import {
+  DataSource,
+  InsertResult,
+  IsNull,
+  Not,
+  In,
+  UpdateResult,
+} from 'typeorm';
 import { CreateTaskDto } from './dto';
-import { withTransaction } from 'src/common/helpers';
+import { withTransaction, extractError } from 'src/common/helpers';
 import { JiraService } from '../jira/jira.service';
-import { TASK_PAGE_SIZE } from './constants';
-import { taskTitleFormatter } from './helpers';
+import { JiraIssue } from '../jira/interfaces';
+import { TASK_PAGE_SIZE, TaskState, ReportHeader } from './constants';
+import { escapeHtml } from '../telegram-bot/helpers';
 
 @Injectable()
 export class TaskService {
@@ -42,29 +50,66 @@ export class TaskService {
   }
 
   public async bulkUpsert(args: Partial<TaskEntity>[]): Promise<InsertResult> {
-    const data = await withTransaction(this.datasource, async (queryRunner) => {
-      const taskRepository = queryRunner.manager.getRepository(TaskEntity);
-      const data = await taskRepository.upsert(args, {
-        conflictPaths: ['externalId'],
-        upsertType: 'on-conflict-do-update',
-      });
-      return data;
-    });
+    try {
+      const data = await withTransaction(
+        this.datasource,
+        async (queryRunner) => {
+          const taskRepository = queryRunner.manager.getRepository(TaskEntity);
+          const data = await taskRepository.upsert(args, {
+            conflictPaths: ['externalId'],
+            upsertType: 'on-conflict-do-update',
+          });
+          return data;
+        },
+      );
 
-    return data;
+      return data;
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(
+        `Failed to bulk upsert ${args.length} tasks: ${message}`,
+        stack,
+      );
+      throw error;
+    }
   }
 
   public async syncTaskData(): Promise<void> {
-    const data = await this.jiraService.getTasks();
-    const taskData: Partial<TaskEntity>[] = data.issues.map((el) => ({
-      externalId: el.id,
-      key: el.key,
-      state: el.fields.status.name,
-      number: +el.key.toString().replace('WA-', ''),
-      title: el.fields.summary,
-      url: `https://workaxle.atlassian.net/browse/${el.key}`,
-    }));
-    await this.bulkUpsert(taskData);
+    try {
+      const data = await this.jiraService.getTasks();
+
+      if (!data?.issues) {
+        this.logger.error('Jira returned invalid response: missing issues');
+        throw new Error('Invalid Jira response');
+      }
+
+      const taskData: Partial<TaskEntity>[] = data.issues.map(
+        (issue: JiraIssue) => ({
+          externalId: issue.id,
+          key: issue.key,
+          state: issue.fields.status.name,
+          number: +issue.key.replace('WA-', ''),
+          title: issue.fields.summary,
+          url: `https://workaxle.atlassian.net/browse/${issue.key}`,
+        }),
+      );
+      await this.bulkUpsert(taskData);
+
+      const activeExternalIds = data.issues.map((issue: JiraIssue) => issue.id);
+      if (activeExternalIds.length) {
+        const taskRepository = this.datasource.getRepository(TaskEntity);
+        await taskRepository.softDelete({
+          externalId: Not(In(activeExternalIds)),
+          deletedAt: IsNull(),
+        });
+      }
+
+      this.logger.log(`Synced ${taskData.length} tasks from Jira`);
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(`Failed to sync tasks: ${message}`, stack);
+      throw error;
+    }
   }
 
   public async getTaskByKey(key: number): Promise<TaskEntity | null> {
@@ -93,7 +138,99 @@ export class TaskService {
   }
 
   public buildTaskReport(task: TaskEntity): string {
-    const report = `Таска [WA-${task.number}: ${taskTitleFormatter(task.title)}](${task.url})\nСтатус - ${task.state} \nКомментарии - ${task.comments || 'Отсутствуют'}`;
+    const comments = task.comments || 'Отсутствуют';
+    const title = escapeHtml(task.title);
+    const report = `Таска <a href="${task.url}">WA-${task.number}: ${title}</a>\nСтатус - ${task.state}\nКомментарии - ${comments}`;
     return report;
+  }
+
+  public async getDirtyTasks(): Promise<TaskEntity[]> {
+    const taskRepository = this.datasource.getRepository(TaskEntity);
+
+    return taskRepository.find({
+      where: { isCommentDirty: true, deletedAt: IsNull() },
+      order: { number: 'DESC' },
+    });
+  }
+
+  public async resetDirtyFlags(): Promise<void> {
+    const taskRepository = this.datasource.getRepository(TaskEntity);
+
+    await taskRepository.update(
+      { isCommentDirty: true },
+      { isCommentDirty: false },
+    );
+  }
+
+  public async getTasksByState(state: string): Promise<TaskEntity[]> {
+    const taskRepository = this.datasource.getRepository(TaskEntity);
+
+    return taskRepository.find({
+      where: { state, deletedAt: IsNull() },
+      order: { number: 'DESC' },
+    });
+  }
+
+  private buildSection(
+    tasks: TaskEntity[],
+    counter: { value: number },
+    header?: ReportHeader,
+  ): string | null {
+    if (!tasks.length) return null;
+
+    const lines = tasks
+      .map((task) => `${counter.value++}. ${this.buildTaskReport(task)}`)
+      .join('\n\n');
+
+    return header ? `${header}\n\n${lines}` : lines;
+  }
+
+  public async generateAutoReport(): Promise<string | null> {
+    let dirtyTasks: TaskEntity[],
+      devAnalysisTasks: TaskEntity[],
+      inProgressTasks: TaskEntity[],
+      awaitingTasks: TaskEntity[],
+      blockedTasks: TaskEntity[];
+
+    try {
+      [
+        dirtyTasks,
+        devAnalysisTasks,
+        inProgressTasks,
+        awaitingTasks,
+        blockedTasks,
+      ] = await Promise.all([
+        this.getDirtyTasks(),
+        this.getTasksByState(TaskState.DEV_ANALYSIS),
+        this.getTasksByState(TaskState.IN_PROGRESS),
+        this.getTasksByState(TaskState.AWAITING_CLIENT_FEEDBACK),
+        this.getTasksByState(TaskState.BLOCKED),
+      ]);
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(
+        `Failed to fetch tasks for auto report: ${message}`,
+        stack,
+      );
+      throw error;
+    }
+
+    const currentTasks = [...devAnalysisTasks, ...inProgressTasks];
+    const sectionIds = new Set(
+      [...currentTasks, ...awaitingTasks, ...blockedTasks].map((t) => t.id),
+    );
+    const mainTasks = dirtyTasks.filter((t) => !sectionIds.has(t.id));
+
+    const counter = { value: 1 };
+    const sections = [
+      this.buildSection(mainTasks, counter),
+      this.buildSection(currentTasks, counter, ReportHeader.CURRENT),
+      this.buildSection(awaitingTasks, counter, ReportHeader.ADDITIONAL),
+      this.buildSection(blockedTasks, counter, ReportHeader.BLOCKED),
+    ].filter(Boolean);
+
+    if (!sections.length) return null;
+
+    return [ReportHeader.TITLE, ...sections].join('\n\n');
   }
 }

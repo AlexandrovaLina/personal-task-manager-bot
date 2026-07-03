@@ -2,8 +2,9 @@ import { Logger, Module } from '@nestjs/common';
 import { TelegramBotService } from './telegram-bot.service';
 import { ConfigModule } from '@nestjs/config';
 import { TaskModule } from '../task/task.module';
+import { ScriptRunnerModule } from '../script-runner';
 @Module({
-  imports: [ConfigModule, TaskModule],
+  imports: [ConfigModule, TaskModule, ScriptRunnerModule],
   providers: [TelegramBotService, Logger],
   exports: [TelegramBotService],
 })

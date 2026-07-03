@@ -12,7 +12,10 @@ import dbConfig from 'db/config/db-config';
 import appConfig from './config/app.config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { HttpModule } from '@nestjs/axios';
+import { LoggerModule } from 'nestjs-pino';
 import { AppService } from './app.service';
+import { pinoPrettyConfig } from './config/pino-pretty.config';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -24,6 +27,12 @@ import { AppService } from './app.service';
       isGlobal: true,
       cache: true,
       load: [telegramConfig, jiraConfig, dbConfig, appConfig],
+    }),
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level: process.env.NODE_ENV !== 'production' ? 'debug' : 'info',
+        transport: pinoPrettyConfig,
+      },
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
