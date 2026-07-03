@@ -115,6 +115,7 @@ export class TaskService {
               issue.fields.customfield_10020?.some(
                 (sprint) => sprint.state === 'active',
               ) ?? false,
+            deletedAt: null,
             isHidden: this.resolveIsHidden(
               state,
               existingByExternalId.get(issue.id),
