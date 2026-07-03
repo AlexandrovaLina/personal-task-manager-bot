@@ -91,6 +91,10 @@ export class TaskService {
           number: +issue.key.replace('WA-', ''),
           title: issue.fields.summary,
           url: `https://workaxle.atlassian.net/browse/${issue.key}`,
+          isCurrentSprint:
+            issue.fields.customfield_10020?.some(
+              (sprint) => sprint.state === 'active',
+            ) ?? false,
         }),
       );
       await this.bulkUpsert(taskData);
@@ -144,11 +148,15 @@ export class TaskService {
     return report;
   }
 
-  public async getDirtyTasks(): Promise<TaskEntity[]> {
+  public async getDirtyTasks(currentSprintOnly = false): Promise<TaskEntity[]> {
     const taskRepository = this.datasource.getRepository(TaskEntity);
 
     return taskRepository.find({
-      where: { isCommentDirty: true, deletedAt: IsNull() },
+      where: {
+        isCommentDirty: true,
+        deletedAt: IsNull(),
+        ...(currentSprintOnly ? { isCurrentSprint: true } : {}),
+      },
       order: { number: 'DESC' },
     });
   }
@@ -162,11 +170,18 @@ export class TaskService {
     );
   }
 
-  public async getTasksByState(state: string): Promise<TaskEntity[]> {
+  public async getTasksByState(
+    state: string,
+    currentSprintOnly = false,
+  ): Promise<TaskEntity[]> {
     const taskRepository = this.datasource.getRepository(TaskEntity);
 
     return taskRepository.find({
-      where: { state, deletedAt: IsNull() },
+      where: {
+        state,
+        deletedAt: IsNull(),
+        ...(currentSprintOnly ? { isCurrentSprint: true } : {}),
+      },
       order: { number: 'DESC' },
     });
   }
@@ -185,7 +200,9 @@ export class TaskService {
     return header ? `${header}\n\n${lines}` : lines;
   }
 
-  public async generateAutoReport(): Promise<string | null> {
+  public async generateAutoReport(
+    currentSprintOnly = false,
+  ): Promise<string | null> {
     let dirtyTasks: TaskEntity[],
       devAnalysisTasks: TaskEntity[],
       inProgressTasks: TaskEntity[],
@@ -203,8 +220,11 @@ export class TaskService {
         this.getDirtyTasks(),
         this.getTasksByState(TaskState.DEV_ANALYSIS),
         this.getTasksByState(TaskState.IN_PROGRESS),
-        this.getTasksByState(TaskState.AWAITING_CLIENT_FEEDBACK),
-        this.getTasksByState(TaskState.BLOCKED),
+        this.getTasksByState(
+          TaskState.AWAITING_CLIENT_FEEDBACK,
+          currentSprintOnly,
+        ),
+        this.getTasksByState(TaskState.BLOCKED, currentSprintOnly),
       ]);
     } catch (error: unknown) {
       const { message, stack } = extractError(error);

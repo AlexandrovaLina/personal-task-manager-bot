@@ -75,6 +75,10 @@ export class TelegramBotService {
         command: 'report_auto',
         description: 'Автоотчет по задачам с комментариями',
       },
+      {
+        command: 'report_auto_sprint',
+        description: 'Автоотчет по задачам текущего спринта',
+      },
       { command: 'reset', description: 'Сбросить данные, начать новый период' },
       {
         command: 'jira',
@@ -194,6 +198,11 @@ export class TelegramBotService {
       await this.reportAutoHandler(msg.chat.id);
     });
 
+    this.bot.onText(BotCommands.REPORT_AUTO_SPRINT, async (msg) => {
+      this.trackPrivateChat(msg);
+      await this.reportAutoHandler(msg.chat.id, true);
+    });
+
     this.bot.onText(BotCommands.RESET, async (msg) => {
       this.trackPrivateChat(msg);
       await this.separatorHandler(msg);
@@ -224,6 +233,7 @@ export class TelegramBotService {
             `Доступные команды:
 /report - отчет по выбранным таскам
 /report_auto - автоотчет по задачам с комментариями
+/report_auto_sprint - автоотчет по задачам текущего спринта
 /jira - меню Jira-скриптов
 /list - список задач
 /sync - синхронизация из Jira
@@ -411,9 +421,10 @@ export class TelegramBotService {
     }
   }
 
-  private async reportAutoHandler(chatId: number) {
+  private async reportAutoHandler(chatId: number, currentSprintOnly = false) {
     try {
-      const report = await this.taskService.generateAutoReport();
+      const report =
+        await this.taskService.generateAutoReport(currentSprintOnly);
 
       if (!report) {
         this.bot.sendMessage(chatId, 'Нет задач с комментариями для отчёта');

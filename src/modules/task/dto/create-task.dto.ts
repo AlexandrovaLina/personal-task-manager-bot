@@ -41,4 +41,8 @@ export class CreateTaskDto implements CreateTaskPayloadData {
   @IsOptional()
   @IsBoolean()
   public isCommentDirty?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  public isCurrentSprint?: boolean;
 }

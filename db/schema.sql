@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict gUQArYm8j3tRja6RioJnNQNNQne8N0rFA58kM5SV0Q01cb3FraLehbaccAHKoKY
+\restrict tca39FuodkwHFhS3IQlnGC0tx0raQ9UrotQ6OsaUz9DvHvkkAN3RFO3d8fbTYsx
 
 -- Dumped from database version 11.14
 -- Dumped by pg_dump version 18.4
@@ -102,7 +102,8 @@ CREATE TABLE public.tasks (
     deleted_at timestamp(3) with time zone,
     title text,
     url text,
-    is_comment_dirty boolean DEFAULT false NOT NULL
+    is_comment_dirty boolean DEFAULT false NOT NULL,
+    is_current_sprint boolean DEFAULT false NOT NULL
 );
 
 
@@ -141,5 +142,5 @@ ALTER TABLE ONLY public.tasks
 -- PostgreSQL database dump complete
 --
 
-\unrestrict gUQArYm8j3tRja6RioJnNQNNQne8N0rFA58kM5SV0Q01cb3FraLehbaccAHKoKY
+\unrestrict tca39FuodkwHFhS3IQlnGC0tx0raQ9UrotQ6OsaUz9DvHvkkAN3RFO3d8fbTYsx
 
