@@ -53,7 +53,7 @@ export class AppService {
     }
   }
 
-  @Cron(CronExpression.EVERY_DAY_AT_10AM)
+  @Cron(CronExpression.EVERY_DAY_AT_7AM)
   async handleMorningMeetingsDigestCron() {
     try {
       await this.calendarService.syncMeetings();
