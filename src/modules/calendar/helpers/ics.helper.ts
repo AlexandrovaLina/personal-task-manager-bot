@@ -47,6 +47,15 @@ function findJoinUrlInText(text: string): string | undefined {
   return undefined;
 }
 
+const CANCELLED_SUBJECT_REGEX = /^canceled:/i;
+
+function isCancelledEvent(event: ical.VEvent): boolean {
+  if (event.status === 'CANCELLED') return true;
+
+  const subject = getParamValue(event.summary);
+  return subject ? CANCELLED_SUBJECT_REGEX.test(subject) : false;
+}
+
 function extractJoinUrl(event: ical.VEvent): string | undefined {
   const description = getParamValue(event.description);
   const location = getParamValue(event.location);
@@ -116,6 +125,8 @@ export async function fetchTodayMeetings(
         to: dayEnd,
       });
       for (const instance of instances) {
+        if (isCancelledEvent(instance.event)) continue;
+
         meetings.push(
           toParsedMeeting(
             event.uid,
@@ -130,6 +141,7 @@ export async function fetchTodayMeetings(
 
     if (!event.start || !event.end) continue;
     if (event.start >= dayEnd || event.end <= dayStart) continue;
+    if (isCancelledEvent(event)) continue;
 
     meetings.push(toParsedMeeting(event.uid, event.start, event.end, event));
   }
