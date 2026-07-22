@@ -53,7 +53,7 @@ export class AppService {
     }
   }
 
-  @Cron(CronExpression.EVERY_DAY_AT_7AM)
+  @Cron('0 0 10 * * 1-5', { timeZone: 'Europe/Moscow' })
   async handleMorningMeetingsDigestCron() {
     try {
       await this.calendarService.syncMeetings();
@@ -73,11 +73,12 @@ export class AppService {
     }
   }
 
-  @Cron('0 */30 * * * 1-5') // every 30 minutes, Mon-Fri only
+  @Cron('0 */30 * * * 1-5', { timeZone: 'Europe/Moscow' })
   async handleMeetingsSyncCron() {
     try {
       const { changed, cancelled } = await this.calendarService.syncMeetings();
       if (!changed.length && !cancelled.length) return;
+      if (this.isQuietHoursMsk()) return;
 
       const meetings = await this.calendarService.getTodayMeetings();
       const digest = this.calendarService.buildDigest(
@@ -95,5 +96,10 @@ export class AppService {
         stack,
       );
     }
+  }
+
+  private isQuietHoursMsk(): boolean {
+    const mskHour = (new Date().getUTCHours() + 3) % 24;
+    return mskHour >= 20 || mskHour < 9;
   }
 }
