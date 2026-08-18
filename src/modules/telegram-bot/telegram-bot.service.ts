@@ -11,6 +11,7 @@ import {
   GENERATE_TASK_REPORT_REGEX,
   GET_TASK_INFO_REGEX,
   MANUAL_ENTRY_REGEX,
+  MANUAL_ENTRY_KEY_REGEX,
   SEPARATOR_REGEX,
   UPDATE_TASK_COMMENTS_REGEX,
 } from './constants';
@@ -120,6 +121,11 @@ export class TelegramBotService {
     this.bot.onText(MANUAL_ENTRY_REGEX, async (msg) => {
       this.trackPrivateChat(msg);
       await this.manualEntryHandler(msg);
+    });
+
+    this.bot.onText(MANUAL_ENTRY_KEY_REGEX, async (msg) => {
+      this.trackPrivateChat(msg);
+      await this.manualEntryInfoHandler(msg.text, msg.chat.id);
     });
 
     this.bot.onText(BotCommands.START, (msg) => {
@@ -487,6 +493,31 @@ export class TelegramBotService {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to save manual entry: ${message}`, stack);
       this.bot.sendMessage(chatId, 'Ошибка при сохранении записи');
+    }
+  }
+
+  private async manualEntryInfoHandler(messageText: string, chatId: number) {
+    try {
+      const key = messageText.toUpperCase();
+      const entry = await this.manualEntryService.getByKey(key);
+
+      if (!entry) {
+        this.bot.sendMessage(
+          chatId,
+          `❗️❗️❗️ Запись по ключу ${key} не найдена ❗️❗️❗️`,
+        );
+        return;
+      }
+
+      const reply = this.taskService.buildManualEntryReport(entry);
+      await this.sendHtml(chatId, reply);
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(
+        `Failed to get manual entry [${messageText}]: ${message}`,
+        stack,
+      );
+      this.bot.sendMessage(chatId, 'Ошибка при получении записи');
     }
   }
 

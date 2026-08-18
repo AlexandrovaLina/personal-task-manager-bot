@@ -44,6 +44,13 @@ export class ManualEntryService {
     }
   }
 
+  public async getByKey(key: string): Promise<ManualEntryEntity | null> {
+    const manualEntryRepository =
+      this.datasource.getRepository(ManualEntryEntity);
+
+    return manualEntryRepository.findOneBy({ key });
+  }
+
   public async getAllEntries(): Promise<ManualEntryEntity[]> {
     const manualEntryRepository =
       this.datasource.getRepository(ManualEntryEntity);
