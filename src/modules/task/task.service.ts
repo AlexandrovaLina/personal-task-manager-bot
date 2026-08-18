@@ -12,6 +12,8 @@ import { CreateTaskDto } from './dto';
 import { withTransaction, extractError } from 'src/common/helpers';
 import { JiraService } from '../jira/jira.service';
 import { JiraIssue } from '../jira/interfaces';
+import { ManualEntryService } from '../manual-entry/manual-entry.service';
+import { ManualEntryEntity } from '../manual-entry/manual-entry.entity';
 import {
   TASK_PAGE_SIZE,
   TaskState,
@@ -26,6 +28,7 @@ export class TaskService {
     private readonly logger: Logger,
     private readonly datasource: DataSource,
     private readonly jiraService: JiraService,
+    private readonly manualEntryService: ManualEntryService,
   ) {
     this.logger = new Logger(TaskService.name);
   }
@@ -236,18 +239,23 @@ export class TaskService {
     return true;
   }
 
+  public buildManualEntryReport(entry: ManualEntryEntity): string {
+    const title = escapeHtml(entry.title);
+    return `<a href="${entry.url}">${entry.key}: ${title}</a>\nКомментарии - ${entry.comment}`;
+  }
+
   private buildSection(
-    tasks: TaskEntity[],
+    lines: string[],
     counter: { value: number },
     header?: ReportHeader,
   ): string | null {
-    if (!tasks.length) return null;
+    if (!lines.length) return null;
 
-    const lines = tasks
-      .map((task) => `${counter.value++}. ${this.buildTaskReport(task)}`)
+    const numbered = lines
+      .map((line) => `${counter.value++}. ${line}`)
       .join('\n\n');
 
-    return header ? `${header}\n\n${lines}` : lines;
+    return header ? `${header}\n\n${numbered}` : numbered;
   }
 
   public async generateAutoReport(
@@ -257,7 +265,8 @@ export class TaskService {
       devAnalysisTasks: TaskEntity[],
       inProgressTasks: TaskEntity[],
       awaitingTasks: TaskEntity[],
-      blockedTasks: TaskEntity[];
+      blockedTasks: TaskEntity[],
+      manualEntries: ManualEntryEntity[];
 
     try {
       [
@@ -266,6 +275,7 @@ export class TaskService {
         inProgressTasks,
         awaitingTasks,
         blockedTasks,
+        manualEntries,
       ] = await Promise.all([
         this.getDirtyTasks(),
         this.getTasksByState(TaskState.DEV_ANALYSIS),
@@ -275,6 +285,7 @@ export class TaskService {
           currentSprintOnly,
         ),
         this.getTasksByState(TaskState.BLOCKED, currentSprintOnly),
+        this.manualEntryService.getAllEntries(),
       ]);
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
@@ -295,12 +306,29 @@ export class TaskService {
     );
     const mainTasks = dirtyTasks.filter((t) => !sectionIds.has(t.id));
 
+    const mainLines = [
+      ...manualEntries.map((entry) => this.buildManualEntryReport(entry)),
+      ...mainTasks.map((task) => this.buildTaskReport(task)),
+    ];
+
     const counter = { value: 1 };
     const sections = [
-      this.buildSection(mainTasks, counter),
-      this.buildSection(currentTasks, counter, ReportHeader.CURRENT),
-      this.buildSection(visibleAwaitingTasks, counter, ReportHeader.ADDITIONAL),
-      this.buildSection(visibleBlockedTasks, counter, ReportHeader.BLOCKED),
+      this.buildSection(mainLines, counter),
+      this.buildSection(
+        currentTasks.map((task) => this.buildTaskReport(task)),
+        counter,
+        ReportHeader.CURRENT,
+      ),
+      this.buildSection(
+        visibleAwaitingTasks.map((task) => this.buildTaskReport(task)),
+        counter,
+        ReportHeader.ADDITIONAL,
+      ),
+      this.buildSection(
+        visibleBlockedTasks.map((task) => this.buildTaskReport(task)),
+        counter,
+        ReportHeader.BLOCKED,
+      ),
     ].filter(Boolean);
 
     if (!sections.length) return null;

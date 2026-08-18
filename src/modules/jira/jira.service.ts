@@ -3,7 +3,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '@nestjs/config';
 import { extractError } from 'src/common/helpers';
-import { JiraSearchResponse } from './interfaces';
+import { JiraIssue, JiraSearchResponse } from './interfaces';
 
 @Injectable()
 export class JiraService {
@@ -54,6 +54,29 @@ export class JiraService {
       const { message, stack } = extractError(error);
       this.logger.error(`Error fetching tasks from Jira: ${message}`, stack);
       throw new Error('Could not fetch tasks from Jira');
+    }
+  }
+
+  public async getIssueByKey(key: string): Promise<JiraIssue> {
+    try {
+      const url = `${this.baseUrl}/issue/${key}?fields=summary`;
+      const headers = {
+        Authorization: `Basic ${this.authToken}`,
+        Accept: 'application/json',
+      };
+
+      const response = await firstValueFrom(
+        this.httpService.get<JiraIssue>(url, { headers }),
+      );
+
+      return response.data;
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(
+        `Error fetching issue ${key} from Jira: ${message}`,
+        stack,
+      );
+      throw new Error(`Could not fetch issue ${key} from Jira`);
     }
   }
 }

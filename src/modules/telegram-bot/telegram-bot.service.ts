@@ -4,11 +4,13 @@ import * as TelegramBot from 'node-telegram-bot-api';
 import { TaskService } from '../task/task.service';
 import { ScriptRunnerService } from '../script-runner';
 import { CalendarService } from '../calendar/calendar.service';
+import { ManualEntryService } from '../manual-entry/manual-entry.service';
 import { forEachPromise, extractError } from 'src/common/helpers';
 import {
   BotCommands,
   GENERATE_TASK_REPORT_REGEX,
   GET_TASK_INFO_REGEX,
+  MANUAL_ENTRY_REGEX,
   SEPARATOR_REGEX,
   UPDATE_TASK_COMMENTS_REGEX,
 } from './constants';
@@ -55,6 +57,7 @@ export class TelegramBotService {
     private readonly taskService: TaskService,
     private readonly scriptRunner: ScriptRunnerService,
     private readonly calendarService: CalendarService,
+    private readonly manualEntryService: ManualEntryService,
   ) {
     this.logger = new Logger(TelegramBotService.name);
     this.bot = new TelegramBot(
@@ -112,6 +115,11 @@ export class TelegramBotService {
     this.bot.onText(UPDATE_TASK_COMMENTS_REGEX, async (msg) => {
       this.trackPrivateChat(msg);
       await this.updateTaskHandler(msg, msg.chat.id);
+    });
+
+    this.bot.onText(MANUAL_ENTRY_REGEX, async (msg) => {
+      this.trackPrivateChat(msg);
+      await this.manualEntryHandler(msg);
     });
 
     this.bot.onText(BotCommands.START, (msg) => {
@@ -461,6 +469,27 @@ export class TelegramBotService {
     }
   }
 
+  private async manualEntryHandler(msg: TelegramBot.Message) {
+    const chatId = msg.chat.id;
+    try {
+      const match = msg.text.match(MANUAL_ENTRY_REGEX);
+      const key = match[1].toUpperCase();
+      const comment = match[2]?.trim();
+
+      if (!comment) {
+        this.bot.sendMessage(chatId, 'Комментарий не может быть пустым');
+        return;
+      }
+
+      await this.manualEntryService.upsertEntry(key, comment);
+      this.bot.sendMessage(chatId, `Запись ${key} сохранена`);
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(`Failed to save manual entry: ${message}`, stack);
+      this.bot.sendMessage(chatId, 'Ошибка при сохранении записи');
+    }
+  }
+
   private async reportAutoHandler(chatId: number, currentSprintOnly = false) {
     try {
       const report =
@@ -587,22 +616,26 @@ export class TelegramBotService {
     const chatId = msg.chat.id;
     try {
       const dirtyTasks = await this.taskService.getDirtyTasks();
+      const manualEntries = await this.manualEntryService.getAllEntries();
 
-      if (!dirtyTasks.length) {
+      if (!dirtyTasks.length && !manualEntries.length) {
         this.bot.sendMessage(chatId, 'Нет данных для сброса');
         return;
       }
 
       await this.taskService.resetDirtyFlags();
+      await this.manualEntryService.resetEntries();
+
+      const totalCount = dirtyTasks.length + manualEntries.length;
       this.bot.sendMessage(
         chatId,
-        `———————————————————————————————\nДанные сброшены (${dirtyTasks.length} задач). Новый рабочий период начат.`,
+        `———————————————————————————————\nДанные сброшены (${totalCount} задач). Новый рабочий период начат.`,
       );
 
       const initiator = msg.from?.first_name || 'Кто-то';
       await this.notifyOtherPrivateChats(
         chatId,
-        `🔴 ${initiator} сбросил(а) данные для отчёта (${dirtyTasks.length} задач). Новый период начат.`,
+        `🔴 ${initiator} сбросил(а) данные для отчёта (${totalCount} задач). Новый период начат.`,
       );
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
