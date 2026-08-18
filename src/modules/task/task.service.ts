@@ -306,19 +306,25 @@ export class TaskService {
     );
     const mainTasks = dirtyTasks.filter((t) => !sectionIds.has(t.id));
 
+    const currentManualEntries = manualEntries.filter((e) => e.isCurrent);
+    const mainManualEntries = manualEntries.filter((e) => !e.isCurrent);
+
     const mainLines = [
-      ...manualEntries.map((entry) => this.buildManualEntryReport(entry)),
+      ...mainManualEntries.map((entry) => this.buildManualEntryReport(entry)),
       ...mainTasks.map((task) => this.buildTaskReport(task)),
+    ];
+
+    const currentLines = [
+      ...currentManualEntries.map((entry) =>
+        this.buildManualEntryReport(entry),
+      ),
+      ...currentTasks.map((task) => this.buildTaskReport(task)),
     ];
 
     const counter = { value: 1 };
     const sections = [
       this.buildSection(mainLines, counter),
-      this.buildSection(
-        currentTasks.map((task) => this.buildTaskReport(task)),
-        counter,
-        ReportHeader.CURRENT,
-      ),
+      this.buildSection(currentLines, counter, ReportHeader.CURRENT),
       this.buildSection(
         visibleAwaitingTasks.map((task) => this.buildTaskReport(task)),
         counter,

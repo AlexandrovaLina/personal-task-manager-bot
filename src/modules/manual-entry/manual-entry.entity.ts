@@ -15,4 +15,7 @@ export class ManualEntryEntity extends BaseEntity {
 
   @Column({ type: 'text' })
   public comment: string;
+
+  @Column({ type: 'boolean', default: false })
+  public isCurrent: boolean;
 }

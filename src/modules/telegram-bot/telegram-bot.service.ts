@@ -327,6 +327,17 @@ export class TelegramBotService {
 
           return;
         }
+        if (callbackQuery.data.startsWith('manual_current_')) {
+          const key = callbackQuery.data.replace('manual_current_', '');
+          await this.manualEntryMarkCurrentHandler(
+            key,
+            chatId,
+            message.message_id,
+            callbackQuery.id,
+          );
+
+          return;
+        }
         if (callbackQuery.data.startsWith('hide_')) {
           const taskNumber = parseInt(callbackQuery.data.split('_')[1], 10);
           await this.toggleHiddenHandler(
@@ -488,12 +499,47 @@ export class TelegramBotService {
       }
 
       await this.manualEntryService.upsertEntry(key, comment);
-      this.bot.sendMessage(chatId, `Запись ${key} сохранена`);
+      this.bot.sendMessage(chatId, `Запись ${key} сохранена`, {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: '➕ Добавить в текущие задачи',
+                callback_data: `manual_current_${key}`,
+              },
+            ],
+          ],
+        },
+      });
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to save manual entry: ${message}`, stack);
       this.bot.sendMessage(chatId, 'Ошибка при сохранении записи');
     }
+  }
+
+  private async manualEntryMarkCurrentHandler(
+    key: string,
+    chatId: number,
+    messageId: number,
+    callbackQueryId: string,
+  ) {
+    const entry = await this.manualEntryService.setCurrent(key);
+    if (!entry) {
+      this.bot.answerCallbackQuery(callbackQueryId, {
+        text: 'Запись не найдена',
+        show_alert: true,
+      });
+      return;
+    }
+
+    this.bot.answerCallbackQuery(callbackQueryId, {
+      text: `${key} добавлена в текущие задачи`,
+    });
+    this.bot.editMessageReplyMarkup(
+      { inline_keyboard: [] },
+      { chat_id: chatId, message_id: messageId },
+    );
   }
 
   private async manualEntryInfoHandler(messageText: string, chatId: number) {

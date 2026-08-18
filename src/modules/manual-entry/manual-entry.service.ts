@@ -17,6 +17,7 @@ export class ManualEntryService {
   public async upsertEntry(
     key: string,
     comment: string,
+    isCurrent = false,
   ): Promise<ManualEntryEntity> {
     const manualEntryRepository =
       this.datasource.getRepository(ManualEntryEntity);
@@ -31,6 +32,7 @@ export class ManualEntryService {
         title: issue.fields.summary,
         url: `https://workaxle.atlassian.net/browse/${key}`,
         comment,
+        isCurrent,
       });
 
       return await manualEntryRepository.save(entity);
@@ -42,6 +44,15 @@ export class ManualEntryService {
       );
       throw error;
     }
+  }
+
+  public async setCurrent(key: string): Promise<ManualEntryEntity | null> {
+    const manualEntryRepository =
+      this.datasource.getRepository(ManualEntryEntity);
+
+    await manualEntryRepository.update({ key }, { isCurrent: true });
+
+    return manualEntryRepository.findOneBy({ key });
   }
 
   public async getByKey(key: string): Promise<ManualEntryEntity | null> {
