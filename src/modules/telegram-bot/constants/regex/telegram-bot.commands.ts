@@ -5,7 +5,6 @@ export const BotCommands = {
   REPORT24: /\/report24/,
   RESET: /\/reset/,
   SYNC: /\/sync(?!_calls)/,
-  LIST: /\/list/,
   CALLS: /\/calls/,
   SYNC_CALLS: /\/sync_calls/,
   HIDDEN: /\/hidden/,

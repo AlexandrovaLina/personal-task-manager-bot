@@ -15,7 +15,6 @@ import {
   UPDATE_TASK_COMMENTS_REGEX,
 } from './constants';
 import { TaskEntity } from '../task/task.entity';
-import { TASK_PAGE_SIZE } from '../task/constants';
 import { entitiesToHtml } from './helpers';
 
 const REPORT24_SCRIPT = 'report_24h.py';
@@ -47,7 +46,6 @@ export class TelegramBotService {
 
     this.bot.setMyCommands([
       { command: 'start', description: 'Главное меню' },
-      { command: 'list', description: 'Список задач' },
       { command: 'sync', description: 'Синхронизация из Jira' },
       {
         command: 'report_auto',
@@ -72,7 +70,24 @@ export class TelegramBotService {
 
     const mainMenu = {
       reply_markup: {
-        inline_keyboard: [[{ text: 'Help', callback_data: 'help' }]],
+        inline_keyboard: [
+          [
+            { text: '📊 Автоотчёт', callback_data: 'menu_report_auto' },
+            {
+              text: '📊 Автоотчёт (спринт)',
+              callback_data: 'menu_report_auto_sprint',
+            },
+          ],
+          [{ text: '📋 Отчёт за 24ч', callback_data: 'menu_report24' }],
+          [{ text: '📅 Созвоны сегодня', callback_data: 'menu_calls' }],
+          [
+            { text: '🔄 Синк Jira', callback_data: 'menu_sync' },
+            { text: '🔄 Синк календаря', callback_data: 'menu_sync_calls' },
+          ],
+          [{ text: '🙈 Скрытые задачи', callback_data: 'menu_hidden' }],
+          [{ text: '🔴 Сброс периода', callback_data: 'menu_reset' }],
+          [{ text: '❓ Help', callback_data: 'help' }],
+        ],
         is_persistent: false,
       },
     };
@@ -115,21 +130,6 @@ export class TelegramBotService {
     this.bot.onText(BotCommands.SYNC_CALLS, async (msg) => {
       this.trackPrivateChat(msg);
       await this.syncCallsHandler(msg.chat.id);
-    });
-
-    this.bot.onText(BotCommands.LIST, async (msg) => {
-      this.trackPrivateChat(msg);
-      const chatId = msg.chat.id;
-      try {
-        const options = await this.generateInlineKeyboard(1);
-        this.bot.sendMessage(chatId, 'Ваши задачи:', {
-          reply_markup: options,
-        });
-      } catch (error: unknown) {
-        const { message, stack } = extractError(error);
-        this.logger.error(`Failed to list tasks: ${message}`, stack);
-        this.bot.sendMessage(chatId, 'Ошибка при загрузке списка задач');
-      }
     });
 
     this.bot.onText(BotCommands.REPORT_AUTO, async (msg) => {
@@ -180,7 +180,6 @@ export class TelegramBotService {
 /report24 - отчёт за 24ч из Jira
 /calls - созвоны на сегодня
 /sync_calls - синхронизация созвонов из календаря
-/list - список задач
 /hidden - видимость заблокированных/ожидающих задач в автоотчёте
 /sync - синхронизация из Jira
 
@@ -189,24 +188,39 @@ export class TelegramBotService {
           );
           return;
         }
-        if (callbackQuery.data.startsWith('page_')) {
-          const page = parseInt(callbackQuery.data.split('_')[1], 10);
-          if (!Number.isInteger(page) || page < 1) return;
+        if (callbackQuery.data.startsWith('menu_')) {
+          this.bot.answerCallbackQuery(callbackQuery.id);
+          const action = callbackQuery.data.replace('menu_', '');
 
-          const options = await this.generateInlineKeyboard(page);
-
-          this.bot.editMessageText('Ваши задачи:', {
-            chat_id: chatId,
-            message_id: message.message_id,
-            reply_markup: options,
-          });
-
-          return;
-        }
-        if (callbackQuery.data.startsWith('WA_')) {
-          const taskNumber = callbackQuery.data.split('_')[1];
-
-          await this.getTaskHandler(taskNumber, chatId);
+          switch (action) {
+            case 'report_auto':
+              await this.reportAutoHandler(chatId);
+              break;
+            case 'report_auto_sprint':
+              await this.reportAutoHandler(chatId, true);
+              break;
+            case 'report24':
+              await this.runJiraScript(chatId, REPORT24_SCRIPT);
+              break;
+            case 'calls':
+              await this.callsHandler(chatId);
+              break;
+            case 'sync':
+              await this.syncTaskHandler(chatId);
+              break;
+            case 'sync_calls':
+              await this.syncCallsHandler(chatId);
+              break;
+            case 'hidden':
+              await this.hiddenHandler(chatId);
+              break;
+            case 'reset':
+              await this.resetHandler(
+                chatId,
+                callbackQuery.from?.first_name || 'Кто-то',
+              );
+              break;
+          }
 
           return;
         }
@@ -553,7 +567,10 @@ export class TelegramBotService {
   }
 
   private async separatorHandler(msg: TelegramBot.Message) {
-    const chatId = msg.chat.id;
+    await this.resetHandler(msg.chat.id, msg.from?.first_name || 'Кто-то');
+  }
+
+  private async resetHandler(chatId: number, initiator: string) {
     try {
       const dirtyTasks = await this.taskService.getDirtyTasks();
       const manualEntries = await this.manualEntryService.getAllEntries();
@@ -572,7 +589,6 @@ export class TelegramBotService {
         `———————————————————————————————\nДанные сброшены (${totalCount} задач). Новый рабочий период начат.`,
       );
 
-      const initiator = msg.from?.first_name || 'Кто-то';
       await this.notifyOtherPrivateChats(
         chatId,
         `🔴 ${initiator} сбросил(а) данные для отчёта (${totalCount} задач). Новый период начат.`,
@@ -673,41 +689,5 @@ export class TelegramBotService {
 
     if (remaining) chunks.push(remaining);
     return chunks;
-  }
-
-  private async generateInlineKeyboard(
-    page: number,
-  ): Promise<TelegramBot.InlineKeyboardMarkup> {
-    const { tasks, total } = await this.taskService.getTasks(page);
-    const keyboard: { text: string; callback_data: string }[][] = tasks.map(
-      (task: TaskEntity) => [
-        {
-          text: `WA-${task.number}: ${task.title}`,
-          callback_data: `WA_${task.number}`,
-        },
-      ],
-    );
-
-    const navigation = [];
-
-    if (page > 1)
-      navigation.push({
-        text: '⬅️',
-        callback_data: page > 1 ? `page_${page - 1}` : 'null',
-      });
-
-    const hasNext = page * TASK_PAGE_SIZE < total;
-    if (hasNext) {
-      navigation.push({
-        text: '➡️',
-        callback_data: tasks.length ? `page_${page + 1}` : 'null',
-      });
-    }
-
-    keyboard.push(navigation);
-
-    return {
-      inline_keyboard: keyboard,
-    };
   }
 }

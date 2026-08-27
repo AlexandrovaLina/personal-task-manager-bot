@@ -14,12 +14,7 @@ import { JiraService } from '../jira/jira.service';
 import { JiraIssue } from '../jira/interfaces';
 import { ManualEntryService } from '../manual-entry/manual-entry.service';
 import { ManualEntryEntity } from '../manual-entry/manual-entry.entity';
-import {
-  TASK_PAGE_SIZE,
-  TaskState,
-  ReportHeader,
-  HIDEABLE_STATES,
-} from './constants';
+import { TaskState, ReportHeader, HIDEABLE_STATES } from './constants';
 import { escapeHtml } from '../telegram-bot/helpers';
 
 @Injectable()
@@ -149,23 +144,6 @@ export class TaskService {
     const task = await taskRepository.findOneBy({ number: key });
 
     return task;
-  }
-
-  public async getTasks(page: number) {
-    const taskRepository = this.datasource.getRepository(TaskEntity);
-
-    const [tasks, total] = await taskRepository.findAndCount({
-      skip: (page - 1) * TASK_PAGE_SIZE,
-      take: TASK_PAGE_SIZE,
-      order: {
-        number: 'DESC',
-      },
-    });
-
-    return {
-      tasks,
-      total,
-    };
   }
 
   public buildTaskReport(task: TaskEntity): string {

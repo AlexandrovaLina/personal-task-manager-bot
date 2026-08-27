@@ -1,5 +1,3 @@
-export const TASK_PAGE_SIZE = 5;
-
 export enum TaskState {
   DEV_ANALYSIS = 'Dev Analysis',
   IN_PROGRESS = 'In Progress',
