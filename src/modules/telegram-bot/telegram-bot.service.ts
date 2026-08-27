@@ -5,10 +5,9 @@ import { TaskService } from '../task/task.service';
 import { ScriptRunnerService } from '../script-runner';
 import { CalendarService } from '../calendar/calendar.service';
 import { ManualEntryService } from '../manual-entry/manual-entry.service';
-import { forEachPromise, extractError } from 'src/common/helpers';
+import { extractError } from 'src/common/helpers';
 import {
   BotCommands,
-  GENERATE_TASK_REPORT_REGEX,
   GET_TASK_INFO_REGEX,
   MANUAL_ENTRY_REGEX,
   MANUAL_ENTRY_KEY_REGEX,
@@ -19,37 +18,11 @@ import { TaskEntity } from '../task/task.entity';
 import { TASK_PAGE_SIZE } from '../task/constants';
 import { entitiesToHtml } from './helpers';
 
-const JIRA_SCRIPTS = {
-  report24: {
-    script: 'report_24h.py',
-    label: '📋 Отчёт за 24ч',
-    needsKey: false,
-  },
-  issue: {
-    script: 'fetch_issue.py',
-    label: '🔍 Детали задачи',
-    needsKey: true,
-  },
-  comments: {
-    script: 'get_comments.py',
-    label: '💬 Комментарии',
-    needsKey: true,
-  },
-  subtasks: {
-    script: 'get_subtasks.py',
-    label: '📂 Подзадачи',
-    needsKey: true,
-  },
-  epic: {
-    script: 'fetch_epic_children.py',
-    label: '🏷 Дети эпика',
-    needsKey: true,
-  },
-} as const;
+const REPORT24_SCRIPT = 'report_24h.py';
+
 @Injectable()
 export class TelegramBotService {
   private bot: TelegramBot;
-  private pendingJiraAction = new Map<number, string>();
   private privateChatIds = new Set<number>();
 
   constructor(
@@ -76,7 +49,6 @@ export class TelegramBotService {
       { command: 'start', description: 'Главное меню' },
       { command: 'list', description: 'Список задач' },
       { command: 'sync', description: 'Синхронизация из Jira' },
-      { command: 'report', description: 'Отчет по выбранным таскам' },
       {
         command: 'report_auto',
         description: 'Автоотчет по задачам с комментариями',
@@ -86,10 +58,7 @@ export class TelegramBotService {
         description: 'Автоотчет по задачам текущего спринта',
       },
       { command: 'reset', description: 'Сбросить данные, начать новый период' },
-      {
-        command: 'jira',
-        description: 'Jira: отчёт, детали, комментарии и др.',
-      },
+      { command: 'report24', description: 'Отчёт за 24ч из Jira' },
       { command: 'calls', description: 'Созвоны на сегодня' },
       {
         command: 'sync_calls',
@@ -136,66 +105,6 @@ export class TelegramBotService {
         'Добро пожаловать в меню. Выберите опцию:',
         mainMenu,
       );
-    });
-
-    this.bot.onText(BotCommands.REPORT, (msg) => {
-      this.trackPrivateChat(msg);
-      const chatId = msg.chat.id;
-      this.bot
-        .sendMessage(
-          chatId,
-          `Отправьте мне номера тасок, которые включить в отчет, через запятую в ответ на это сообщение
-Рекомендую произвести синхронизацию данных перед генерацией отчета`,
-        )
-        .then(() => {
-          const listener = async (replyMsg: TelegramBot.Message) => {
-            const chatId = replyMsg.chat.id;
-            try {
-              const parsed = replyMsg.text
-                .split(',')
-                .map((s) => s.trim())
-                .filter(Boolean);
-
-              const taskNumbers = parsed.map(Number);
-              const invalid = parsed.filter(
-                (s, i) =>
-                  !Number.isInteger(taskNumbers[i]) || taskNumbers[i] <= 0,
-              );
-
-              if (invalid.length) {
-                this.bot.sendMessage(
-                  chatId,
-                  `Некорректные номера задач: ${invalid.join(', ')}. Введите целые положительные числа через запятую`,
-                );
-                return;
-              }
-
-              this.bot.sendMessage(chatId, `Подготавливаю отчет ... `);
-              let taskReport = '';
-              await forEachPromise(
-                taskNumbers,
-                async (taskNumber: number, index) => {
-                  const current =
-                    await this.taskService.getTaskByKey(taskNumber);
-                  if (!current?.id) {
-                    taskReport += `${index + 1}.Таска номер ${taskNumber} не найдена \n\n`;
-                    return;
-                  }
-                  const taskInfo = this.taskService.buildTaskReport(current);
-                  taskReport += `${index + 1}. ${taskInfo} \n\n`;
-                },
-              );
-              await this.sendHtml(chatId, `Отчет по таскам \n\n ${taskReport}`);
-            } catch (error: unknown) {
-              const { message, stack } = extractError(error);
-              this.logger.error(`Failed to generate report: ${message}`, stack);
-              this.bot.sendMessage(chatId, 'Ошибка при генерации отчёта');
-            } finally {
-              this.bot.removeTextListener(GENERATE_TASK_REPORT_REGEX);
-            }
-          };
-          this.bot.onText(GENERATE_TASK_REPORT_REGEX, listener);
-        });
     });
 
     this.bot.onText(BotCommands.SYNC, async (msg) => {
@@ -253,14 +162,9 @@ export class TelegramBotService {
       await this.hiddenHandler(msg.chat.id);
     });
 
-    this.bot.onText(BotCommands.JIRA, (msg) => {
+    this.bot.onText(BotCommands.REPORT24, async (msg) => {
       this.trackPrivateChat(msg);
-      const keyboard = Object.entries(JIRA_SCRIPTS).map(([key, { label }]) => [
-        { text: label, callback_data: `jira_${key}` },
-      ]);
-      this.bot.sendMessage(msg.chat.id, 'Выберите действие:', {
-        reply_markup: { inline_keyboard: keyboard },
-      });
+      await this.runJiraScript(msg.chat.id, REPORT24_SCRIPT);
     });
 
     this.bot.on('callback_query', async (callbackQuery) => {
@@ -271,10 +175,9 @@ export class TelegramBotService {
           this.bot.sendMessage(
             chatId,
             `Доступные команды:
-/report - отчет по выбранным таскам
 /report_auto - автоотчет по задачам с комментариями
 /report_auto_sprint - автоотчет по задачам текущего спринта
-/jira - меню Jira-скриптов
+/report24 - отчёт за 24ч из Jira
 /calls - созвоны на сегодня
 /sync_calls - синхронизация созвонов из календаря
 /list - список задач
@@ -283,26 +186,6 @@ export class TelegramBotService {
 
 Обновить комментарий: <номер>: <текст>
 /reset или ---- - сбросить данные, начать новый период`,
-          );
-          return;
-        }
-        if (callbackQuery.data.startsWith('jira_')) {
-          const action = callbackQuery.data.replace('jira_', '');
-          const config = JIRA_SCRIPTS[action];
-          if (!config) return;
-
-          this.bot.answerCallbackQuery(callbackQuery.id);
-
-          if (!config.needsKey) {
-            await this.runJiraScript(chatId, config.script);
-            return;
-          }
-
-          this.pendingJiraAction.set(chatId, config.script);
-          this.bot.sendMessage(
-            chatId,
-            'Введите ключ задачи (например, WA-123):',
-            { reply_markup: { force_reply: true } },
           );
           return;
         }
@@ -370,26 +253,6 @@ export class TelegramBotService {
 
     this.bot.on('error', (error: Error) => {
       this.logger.error(`Telegram bot error: ${error.message}`, error.stack);
-    });
-
-    this.bot.on('message', async (msg) => {
-      this.trackPrivateChat(msg);
-      const chatId = msg.chat.id;
-      const script = this.pendingJiraAction.get(chatId);
-      if (!script || !msg.text || msg.text.startsWith('/')) return;
-
-      this.pendingJiraAction.delete(chatId);
-      const key = msg.text.trim().toUpperCase();
-
-      if (!/^[A-Z]+-\d+$/.test(key)) {
-        this.bot.sendMessage(
-          chatId,
-          'Неверный формат ключа. Ожидается формат: WA-123',
-        );
-        return;
-      }
-
-      await this.runJiraScript(chatId, script, [key]);
     });
   }
 
