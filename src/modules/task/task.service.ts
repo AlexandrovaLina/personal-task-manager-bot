@@ -236,7 +236,7 @@ export class TaskService {
       return existing.isHidden;
     }
 
-    return true;
+    return false;
   }
 
   public buildManualEntryReport(entry: ManualEntryEntity): string {
