@@ -16,3 +16,5 @@ export const HIDEABLE_STATES: readonly string[] = [
   TaskState.AWAITING_CLIENT_FEEDBACK,
   TaskState.BLOCKED,
 ];
+
+export const SUBTASK_REVIEW_STATE = 'UNDER REVIEW';

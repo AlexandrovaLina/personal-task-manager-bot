@@ -14,8 +14,18 @@ import { JiraService } from '../jira/jira.service';
 import { JiraIssue } from '../jira/interfaces';
 import { ManualEntryService } from '../manual-entry/manual-entry.service';
 import { ManualEntryEntity } from '../manual-entry/manual-entry.entity';
-import { TaskState, ReportHeader, HIDEABLE_STATES } from './constants';
+import {
+  TaskState,
+  ReportHeader,
+  HIDEABLE_STATES,
+  SUBTASK_REVIEW_STATE,
+} from './constants';
 import { escapeHtml } from '../telegram-bot/helpers';
+
+interface ReportItem {
+  text: string;
+  children?: string[];
+}
 
 @Injectable()
 export class TaskService {
@@ -223,32 +233,35 @@ export class TaskService {
     return `<a href="${entry.url}">${entry.key}: ${title}</a>\nКомментарии - ${entry.comment}`;
   }
 
-  public buildDelegatedParentReport(
-    task: TaskEntity,
-    children: TaskEntity[],
-  ): string {
+  public buildDelegatedParentReport(task: TaskEntity): string {
     const title = escapeHtml(task.title);
-    const comments = task.comments || 'Отсутствуют';
-    const childRefs = children.map((child) => `WA-${child.number}`).join(', ');
     return (
       `⏳ Таска <a href="${task.url}">WA-${task.number}: ${title}</a>\n` +
-      `Комментарии - ${comments}\n` +
-      `Ожидает ревью подзадачи ${childRefs}`
+      `Статус - ${task.state}\n` +
+      `Ожидает ревью подзадачи:`
     );
   }
 
+  public buildChildTaskReport(task: TaskEntity): string {
+    return `↳ ${this.buildTaskReport(task)}`;
+  }
+
   private buildSection(
-    lines: string[],
+    items: ReportItem[],
     counter: { value: number },
     header?: ReportHeader,
   ): string | null {
-    if (!lines.length) return null;
+    if (!items.length) return null;
 
-    const numbered = lines
-      .map((line) => `${counter.value++}. ${line}`)
-      .join('\n\n');
+    const rendered = items.map((item) => {
+      const numbered = `${counter.value++}. ${item.text}`;
+      return item.children?.length
+        ? [numbered, ...item.children].join('\n\n')
+        : numbered;
+    });
 
-    return header ? `${header}\n\n${numbered}` : numbered;
+    const body = rendered.join('\n\n');
+    return header ? `${header}\n\n${body}` : body;
   }
 
   public async generateAutoReport(
@@ -297,6 +310,7 @@ export class TaskService {
       const children = await taskRepository.find({
         where: {
           parentExternalId: In(currentTaskCandidates.map((t) => t.externalId)),
+          state: SUBTASK_REVIEW_STATE,
           deletedAt: IsNull(),
         },
       });
@@ -314,6 +328,9 @@ export class TaskService {
     const delegatedParents = currentTaskCandidates.filter((t) =>
       childrenByParent.has(t.externalId),
     );
+    const nestedChildIds = new Set(
+      [...childrenByParent.values()].flat().map((t) => t.id),
+    );
 
     const visibleAwaitingTasks = awaitingTasks.filter((t) => !t.isHidden);
     const visibleBlockedTasks = blockedTasks.filter((t) => !t.isHidden);
@@ -325,41 +342,52 @@ export class TaskService {
     );
     const delegatedParentIds = new Set(delegatedParents.map((t) => t.id));
     const mainTasks = dirtyTasks.filter(
-      (t) => !sectionIds.has(t.id) && !delegatedParentIds.has(t.id),
+      (t) =>
+        !sectionIds.has(t.id) &&
+        !delegatedParentIds.has(t.id) &&
+        !nestedChildIds.has(t.id),
     );
 
     const currentManualEntries = manualEntries.filter((e) => e.isCurrent);
     const mainManualEntries = manualEntries.filter((e) => !e.isCurrent);
 
-    const mainLines = [
-      ...mainManualEntries.map((entry) => this.buildManualEntryReport(entry)),
-      ...delegatedParents.map((task) =>
-        this.buildDelegatedParentReport(
-          task,
-          childrenByParent.get(task.externalId) ?? [],
+    const mainItems: ReportItem[] = [
+      ...mainManualEntries.map((entry) => ({
+        text: this.buildManualEntryReport(entry),
+      })),
+      ...delegatedParents.map((task) => ({
+        text: this.buildDelegatedParentReport(task),
+        children: (childrenByParent.get(task.externalId) ?? []).map((child) =>
+          this.buildChildTaskReport(child),
         ),
-      ),
-      ...mainTasks.map((task) => this.buildTaskReport(task)),
+      })),
+      ...mainTasks.map((task) => ({ text: this.buildTaskReport(task) })),
     ];
 
-    const currentLines = [
-      ...currentManualEntries.map((entry) =>
-        this.buildManualEntryReport(entry),
-      ),
-      ...activeCurrentTasks.map((task) => this.buildTaskReport(task)),
+    const currentItems: ReportItem[] = [
+      ...currentManualEntries.map((entry) => ({
+        text: this.buildManualEntryReport(entry),
+      })),
+      ...activeCurrentTasks.map((task) => ({
+        text: this.buildTaskReport(task),
+      })),
     ];
 
     const counter = { value: 1 };
     const sections = [
-      this.buildSection(mainLines, counter),
-      this.buildSection(currentLines, counter, ReportHeader.CURRENT),
+      this.buildSection(mainItems, counter),
+      this.buildSection(currentItems, counter, ReportHeader.CURRENT),
       this.buildSection(
-        visibleAwaitingTasks.map((task) => this.buildTaskReport(task)),
+        visibleAwaitingTasks.map((task) => ({
+          text: this.buildTaskReport(task),
+        })),
         counter,
         ReportHeader.ADDITIONAL,
       ),
       this.buildSection(
-        visibleBlockedTasks.map((task) => this.buildTaskReport(task)),
+        visibleBlockedTasks.map((task) => ({
+          text: this.buildTaskReport(task),
+        })),
         counter,
         ReportHeader.BLOCKED,
       ),
