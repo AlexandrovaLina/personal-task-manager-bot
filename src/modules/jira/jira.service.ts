@@ -43,7 +43,7 @@ export class JiraService {
         const body = {
           jql,
           maxResults: this.maxResults,
-          fields: ['summary', 'status', 'customfield_10020'],
+          fields: ['summary', 'status', 'customfield_10020', 'parent'],
           ...(nextPageToken ? { nextPageToken } : {}),
         };
 

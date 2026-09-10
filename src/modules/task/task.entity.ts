@@ -30,4 +30,7 @@ export class TaskEntity extends BaseEntity {
 
   @Column({ type: 'boolean', default: false })
   public isHidden: boolean;
+
+  @Column({ type: 'text', nullable: true })
+  public parentExternalId?: string | null;
 }

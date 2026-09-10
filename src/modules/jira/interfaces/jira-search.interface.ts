@@ -8,10 +8,16 @@ export interface JiraSprint {
   state: string;
 }
 
+export interface JiraIssueParent {
+  id: string;
+  key: string;
+}
+
 export interface JiraIssueFields {
   summary: string;
   status: JiraIssueStatus;
   customfield_10020?: JiraSprint[] | null;
+  parent?: JiraIssueParent | null;
 }
 
 export interface JiraIssue {

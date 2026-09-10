@@ -113,6 +113,7 @@ export class TaskService {
               issue.fields.customfield_10020?.some(
                 (sprint) => sprint.state === 'active',
               ) ?? false,
+            parentExternalId: issue.fields.parent?.id ?? null,
             deletedAt: null,
             isHidden: this.resolveIsHidden(
               state,
@@ -222,6 +223,20 @@ export class TaskService {
     return `<a href="${entry.url}">${entry.key}: ${title}</a>\nКомментарии - ${entry.comment}`;
   }
 
+  public buildDelegatedParentReport(
+    task: TaskEntity,
+    children: TaskEntity[],
+  ): string {
+    const title = escapeHtml(task.title);
+    const comments = task.comments || 'Отсутствуют';
+    const childRefs = children.map((child) => `WA-${child.number}`).join(', ');
+    return (
+      `⏳ Таска <a href="${task.url}">WA-${task.number}: ${title}</a>\n` +
+      `Комментарии - ${comments}\n` +
+      `Ожидает ревью подзадачи ${childRefs}`
+    );
+  }
+
   private buildSection(
     lines: string[],
     counter: { value: number },
@@ -274,21 +289,56 @@ export class TaskService {
       throw error;
     }
 
-    const currentTasks = [...devAnalysisTasks, ...inProgressTasks];
+    const currentTaskCandidates = [...devAnalysisTasks, ...inProgressTasks];
+
+    const childrenByParent = new Map<string, TaskEntity[]>();
+    if (currentTaskCandidates.length) {
+      const taskRepository = this.datasource.getRepository(TaskEntity);
+      const children = await taskRepository.find({
+        where: {
+          parentExternalId: In(currentTaskCandidates.map((t) => t.externalId)),
+          deletedAt: IsNull(),
+        },
+      });
+
+      for (const child of children) {
+        const siblings = childrenByParent.get(child.parentExternalId) ?? [];
+        siblings.push(child);
+        childrenByParent.set(child.parentExternalId, siblings);
+      }
+    }
+
+    const activeCurrentTasks = currentTaskCandidates.filter(
+      (t) => !childrenByParent.has(t.externalId),
+    );
+    const delegatedParents = currentTaskCandidates.filter((t) =>
+      childrenByParent.has(t.externalId),
+    );
 
     const visibleAwaitingTasks = awaitingTasks.filter((t) => !t.isHidden);
     const visibleBlockedTasks = blockedTasks.filter((t) => !t.isHidden);
 
     const sectionIds = new Set(
-      [...currentTasks, ...awaitingTasks, ...blockedTasks].map((t) => t.id),
+      [...activeCurrentTasks, ...awaitingTasks, ...blockedTasks].map(
+        (t) => t.id,
+      ),
     );
-    const mainTasks = dirtyTasks.filter((t) => !sectionIds.has(t.id));
+    const delegatedParentIds = new Set(delegatedParents.map((t) => t.id));
+    const mainTasks = dirtyTasks.filter(
+      (t) => !sectionIds.has(t.id) && !delegatedParentIds.has(t.id),
+    );
 
     const currentManualEntries = manualEntries.filter((e) => e.isCurrent);
     const mainManualEntries = manualEntries.filter((e) => !e.isCurrent);
 
     const mainLines = [
       ...mainManualEntries.map((entry) => this.buildManualEntryReport(entry)),
+      ...delegatedParents.map((task) =>
+        this.buildDelegatedParentReport(
+          task,
+          childrenByParent.get(task.externalId) ?? [],
+        ),
+      ),
       ...mainTasks.map((task) => this.buildTaskReport(task)),
     ];
 
@@ -296,7 +346,7 @@ export class TaskService {
       ...currentManualEntries.map((entry) =>
         this.buildManualEntryReport(entry),
       ),
-      ...currentTasks.map((task) => this.buildTaskReport(task)),
+      ...activeCurrentTasks.map((task) => this.buildTaskReport(task)),
     ];
 
     const counter = { value: 1 };
