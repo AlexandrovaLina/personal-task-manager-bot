@@ -242,6 +242,15 @@ export class TaskService {
     );
   }
 
+  public buildParentWithChildrenReport(task: TaskEntity): string {
+    const title = escapeHtml(task.title);
+    return (
+      `Таска <a href="${task.url}">WA-${task.number}: ${title}</a>\n` +
+      `Статус - ${task.state}\n` +
+      `Это родительская таска для:`
+    );
+  }
+
   public buildChildTaskReport(task: TaskEntity): string {
     return `↳ ${this.buildTaskReport(task)}`;
   }
@@ -256,7 +265,7 @@ export class TaskService {
     const rendered = items.map((item) => {
       const numbered = `${counter.value++}. ${item.text}`;
       return item.children?.length
-        ? [numbered, ...item.children].join('\n\n')
+        ? [numbered, ...item.children].join('\n')
         : numbered;
     });
 
@@ -310,7 +319,6 @@ export class TaskService {
       const children = await taskRepository.find({
         where: {
           parentExternalId: In(currentTaskCandidates.map((t) => t.externalId)),
-          state: SUBTASK_REVIEW_STATE,
           deletedAt: IsNull(),
         },
       });
@@ -322,11 +330,20 @@ export class TaskService {
       }
     }
 
-    const activeCurrentTasks = currentTaskCandidates.filter(
+    const hasReviewChild = (externalId: string): boolean =>
+      (childrenByParent.get(externalId) ?? []).some(
+        (child) => child.state === SUBTASK_REVIEW_STATE,
+      );
+
+    const plainCurrentTasks = currentTaskCandidates.filter(
       (t) => !childrenByParent.has(t.externalId),
     );
     const delegatedParents = currentTaskCandidates.filter((t) =>
-      childrenByParent.has(t.externalId),
+      hasReviewChild(t.externalId),
+    );
+    const parentsWithChildren = currentTaskCandidates.filter(
+      (t) =>
+        childrenByParent.has(t.externalId) && !hasReviewChild(t.externalId),
     );
     const nestedChildIds = new Set(
       [...childrenByParent.values()].flat().map((t) => t.id),
@@ -336,9 +353,12 @@ export class TaskService {
     const visibleBlockedTasks = blockedTasks.filter((t) => !t.isHidden);
 
     const sectionIds = new Set(
-      [...activeCurrentTasks, ...awaitingTasks, ...blockedTasks].map(
-        (t) => t.id,
-      ),
+      [
+        ...plainCurrentTasks,
+        ...parentsWithChildren,
+        ...awaitingTasks,
+        ...blockedTasks,
+      ].map((t) => t.id),
     );
     const delegatedParentIds = new Set(delegatedParents.map((t) => t.id));
     const mainTasks = dirtyTasks.filter(
@@ -368,7 +388,13 @@ export class TaskService {
       ...currentManualEntries.map((entry) => ({
         text: this.buildManualEntryReport(entry),
       })),
-      ...activeCurrentTasks.map((task) => ({
+      ...parentsWithChildren.map((task) => ({
+        text: this.buildParentWithChildrenReport(task),
+        children: (childrenByParent.get(task.externalId) ?? []).map((child) =>
+          this.buildChildTaskReport(child),
+        ),
+      })),
+      ...plainCurrentTasks.map((task) => ({
         text: this.buildTaskReport(task),
       })),
     ];
