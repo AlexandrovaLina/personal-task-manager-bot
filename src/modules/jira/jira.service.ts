@@ -21,6 +21,7 @@ export class JiraService {
     this.configService.get<string>(`jira.projectKey`);
 
   private readonly maxResults = 100;
+  private readonly maxPages = 20;
   private readonly updatedWindowDays = 90;
 
   public async getTasks(): Promise<JiraSearchResponse> {
@@ -31,25 +32,39 @@ export class JiraService {
         Accept: 'application/json',
         'Content-Type': 'application/json',
       };
-      const body = {
-        jql: `project=${this.projectKey} AND assignee=currentUser() AND updated >= -${this.updatedWindowDays}d ORDER BY updated DESC`,
-        maxResults: this.maxResults,
-        fields: ['summary', 'status', 'customfield_10020'],
-      };
+      const jql = `project=${this.projectKey} AND assignee=currentUser() AND updated >= -${this.updatedWindowDays}d ORDER BY updated DESC`;
 
-      const response = await firstValueFrom(
-        this.httpService.post<JiraSearchResponse>(url, body, { headers }),
-      );
+      const issues: JiraIssue[] = [];
+      let nextPageToken: string | undefined;
+      let isLast = false;
+      let pageCount = 0;
 
-      if (response.data?.issues?.length === this.maxResults) {
+      while (!isLast && pageCount < this.maxPages) {
+        const body = {
+          jql,
+          maxResults: this.maxResults,
+          fields: ['summary', 'status', 'customfield_10020'],
+          ...(nextPageToken ? { nextPageToken } : {}),
+        };
+
+        const response = await firstValueFrom(
+          this.httpService.post<JiraSearchResponse>(url, body, { headers }),
+        );
+
+        issues.push(...(response.data.issues ?? []));
+        isLast = response.data.isLast ?? true;
+        nextPageToken = response.data.nextPageToken;
+        pageCount++;
+      }
+
+      if (!isLast) {
         this.logger.warn(
-          `Jira returned ${this.maxResults} issues (page limit) for the last ` +
-            `${this.updatedWindowDays} days — result may be truncated and ` +
-            `tasks outside the page risk being soft-deleted. Consider pagination.`,
+          `Jira search hit the ${this.maxPages}-page safety cap ` +
+            `(${issues.length} issues fetched for the last ${this.updatedWindowDays} days) — result may still be truncated.`,
         );
       }
 
-      return response.data;
+      return { issues };
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Error fetching tasks from Jira: ${message}`, stack);

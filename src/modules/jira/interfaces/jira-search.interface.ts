@@ -21,8 +21,7 @@ export interface JiraIssue {
 }
 
 export interface JiraSearchResponse {
-  total: number;
-  maxResults: number;
-  startAt: number;
   issues: JiraIssue[];
+  nextPageToken?: string;
+  isLast?: boolean;
 }
