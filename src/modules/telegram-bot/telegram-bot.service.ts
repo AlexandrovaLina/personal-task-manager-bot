@@ -1,11 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as TelegramBot from 'node-telegram-bot-api';
-import { TaskService, TaskEntity } from '../task';
+import { TaskService } from '../task';
 import { ScriptRunnerService } from '../script-runner';
-import { CalendarService } from '../calendar';
 import { ManualEntryService } from '../manual-entry';
-import { ReportBuilderService } from '../report';
 import { extractError } from 'src/common/helpers';
 import {
   BotCommands,
@@ -15,31 +13,35 @@ import {
   SEPARATOR_REGEX,
   UPDATE_TASK_COMMENTS_REGEX,
 } from './constants';
-import { entitiesToHtml } from './helpers';
+import { TelegramMessengerService } from './telegram-messenger.service';
+import {
+  TaskBotHandlers,
+  ManualEntryBotHandlers,
+  CalendarBotHandlers,
+} from './handlers';
 
 const REPORT24_SCRIPT = 'report_24h.py';
 
 @Injectable()
 export class TelegramBotService {
-  private bot: TelegramBot;
   private privateChatIds = new Set<number>();
 
   constructor(
     private readonly logger: Logger,
     private readonly configService: ConfigService,
+    private readonly messenger: TelegramMessengerService,
     private readonly taskService: TaskService,
     private readonly scriptRunner: ScriptRunnerService,
-    private readonly calendarService: CalendarService,
     private readonly manualEntryService: ManualEntryService,
-    private readonly reportBuilderService: ReportBuilderService,
+    private readonly taskHandlers: TaskBotHandlers,
+    private readonly manualEntryHandlers: ManualEntryBotHandlers,
+    private readonly calendarHandlers: CalendarBotHandlers,
   ) {
     this.logger = new Logger(TelegramBotService.name);
-    this.bot = new TelegramBot(
-      this.configService.get<string>(`telegram-bot.token`),
-      {
-        polling: true,
-      },
-    );
+  }
+
+  private get bot(): TelegramBot {
+    return this.messenger.bot;
   }
 
   public initBot() {
@@ -95,22 +97,25 @@ export class TelegramBotService {
 
     this.bot.onText(GET_TASK_INFO_REGEX, async (msg) => {
       this.trackPrivateChat(msg);
-      await this.getTaskHandler(msg.text, msg.chat.id);
+      await this.taskHandlers.getTaskHandler(msg.text, msg.chat.id);
     });
 
     this.bot.onText(UPDATE_TASK_COMMENTS_REGEX, async (msg) => {
       this.trackPrivateChat(msg);
-      await this.updateTaskHandler(msg, msg.chat.id);
+      await this.taskHandlers.updateTaskHandler(msg, msg.chat.id);
     });
 
     this.bot.onText(MANUAL_ENTRY_REGEX, async (msg) => {
       this.trackPrivateChat(msg);
-      await this.manualEntryHandler(msg);
+      await this.manualEntryHandlers.manualEntryHandler(msg);
     });
 
     this.bot.onText(MANUAL_ENTRY_KEY_REGEX, async (msg) => {
       this.trackPrivateChat(msg);
-      await this.manualEntryInfoHandler(msg.text, msg.chat.id);
+      await this.manualEntryHandlers.manualEntryInfoHandler(
+        msg.text,
+        msg.chat.id,
+      );
     });
 
     this.bot.onText(BotCommands.START, (msg) => {
@@ -125,22 +130,22 @@ export class TelegramBotService {
 
     this.bot.onText(BotCommands.SYNC, async (msg) => {
       this.trackPrivateChat(msg);
-      await this.syncTaskHandler(msg.chat.id);
+      await this.taskHandlers.syncTaskHandler(msg.chat.id);
     });
 
     this.bot.onText(BotCommands.SYNC_CALLS, async (msg) => {
       this.trackPrivateChat(msg);
-      await this.syncCallsHandler(msg.chat.id);
+      await this.calendarHandlers.syncCallsHandler(msg.chat.id);
     });
 
     this.bot.onText(BotCommands.REPORT_AUTO, async (msg) => {
       this.trackPrivateChat(msg);
-      await this.reportAutoHandler(msg.chat.id);
+      await this.taskHandlers.reportAutoHandler(msg.chat.id);
     });
 
     this.bot.onText(BotCommands.REPORT_AUTO_SPRINT, async (msg) => {
       this.trackPrivateChat(msg);
-      await this.reportAutoHandler(msg.chat.id, true);
+      await this.taskHandlers.reportAutoHandler(msg.chat.id, true);
     });
 
     this.bot.onText(BotCommands.RESET, async (msg) => {
@@ -155,12 +160,12 @@ export class TelegramBotService {
 
     this.bot.onText(BotCommands.CALLS, async (msg) => {
       this.trackPrivateChat(msg);
-      await this.callsHandler(msg.chat.id);
+      await this.calendarHandlers.callsHandler(msg.chat.id);
     });
 
     this.bot.onText(BotCommands.HIDDEN, async (msg) => {
       this.trackPrivateChat(msg);
-      await this.hiddenHandler(msg.chat.id);
+      await this.taskHandlers.hiddenHandler(msg.chat.id);
     });
 
     this.bot.onText(BotCommands.REPORT24, async (msg) => {
@@ -195,25 +200,25 @@ export class TelegramBotService {
 
           switch (action) {
             case 'report_auto':
-              await this.reportAutoHandler(chatId);
+              await this.taskHandlers.reportAutoHandler(chatId);
               break;
             case 'report_auto_sprint':
-              await this.reportAutoHandler(chatId, true);
+              await this.taskHandlers.reportAutoHandler(chatId, true);
               break;
             case 'report24':
               await this.runJiraScript(chatId, REPORT24_SCRIPT);
               break;
             case 'calls':
-              await this.callsHandler(chatId);
+              await this.calendarHandlers.callsHandler(chatId);
               break;
             case 'sync':
-              await this.syncTaskHandler(chatId);
+              await this.taskHandlers.syncTaskHandler(chatId);
               break;
             case 'sync_calls':
-              await this.syncCallsHandler(chatId);
+              await this.calendarHandlers.syncCallsHandler(chatId);
               break;
             case 'hidden':
-              await this.hiddenHandler(chatId);
+              await this.taskHandlers.hiddenHandler(chatId);
               break;
             case 'reset':
               await this.resetHandler(
@@ -227,7 +232,7 @@ export class TelegramBotService {
         }
         if (callbackQuery.data.startsWith('manual_current_')) {
           const key = callbackQuery.data.replace('manual_current_', '');
-          await this.manualEntryMarkCurrentHandler(
+          await this.manualEntryHandlers.manualEntryMarkCurrentHandler(
             key,
             chatId,
             message.message_id,
@@ -238,7 +243,7 @@ export class TelegramBotService {
         }
         if (callbackQuery.data.startsWith('hide_')) {
           const taskNumber = parseInt(callbackQuery.data.split('_')[1], 10);
-          await this.toggleHiddenHandler(
+          await this.taskHandlers.toggleHiddenHandler(
             taskNumber,
             chatId,
             message.message_id,
@@ -286,285 +291,11 @@ export class TelegramBotService {
     }
   }
 
-  private async getTaskHandler(messageText: string, chatId: number) {
-    try {
-      const taskNumber = Number(messageText);
-      if (!Number.isInteger(taskNumber) || taskNumber <= 0) {
-        this.bot.sendMessage(
-          chatId,
-          'Номер задачи должен быть положительным целым числом',
-        );
-        return;
-      }
-
-      const task = await this.taskService.getTaskByKey(taskNumber);
-      if (!task?.id) {
-        this.bot.sendMessage(
-          chatId,
-          `❗️❗️❗️ Таска с таким номером не найдена ❗️❗️❗️`,
-        );
-        return;
-      }
-
-      const reply = this.reportBuilderService.buildTaskReport(task);
-      await this.sendHtml(chatId, reply);
-    } catch (error: unknown) {
-      const { message, stack } = extractError(error);
-      this.logger.error(
-        `Failed to get task [${messageText}]: ${message}`,
-        stack,
-      );
-      this.bot.sendMessage(chatId, 'Ошибка при получении задачи');
-    }
-  }
-
-  private async updateTaskHandler(msg: TelegramBot.Message, chatId: number) {
-    try {
-      const match = msg.text.match(UPDATE_TASK_COMMENTS_REGEX);
-      if (!match) {
-        this.bot.sendMessage(
-          chatId,
-          'Неверный формат. Используйте: <номер>: <комментарий>',
-        );
-        return;
-      }
-
-      const taskNumber = match[1];
-      const rawComment = match[2]?.trim();
-
-      if (!rawComment) {
-        this.bot.sendMessage(chatId, 'Комментарий не может быть пустым');
-        return;
-      }
-
-      const task = await this.taskService.getTaskByKey(+taskNumber);
-      if (!task?.id) {
-        this.bot.sendMessage(
-          chatId,
-          `❗️❗️❗️ Таска с таким номером не найдена ❗️❗️❗️`,
-        );
-        return;
-      }
-
-      const commentOffset = msg.text.length - rawComment.length;
-      const comment = entitiesToHtml(rawComment, msg.entities, commentOffset);
-
-      await this.taskService.update(task.id, {
-        comments: comment,
-        isCommentDirty: true,
-      });
-      this.bot.sendMessage(
-        chatId,
-        `Таска с номером ${taskNumber} успешно обновлена`,
-      );
-    } catch (error: unknown) {
-      const { message, stack } = extractError(error);
-      this.logger.error(`Failed to update task comment: ${message}`, stack);
-      this.bot.sendMessage(chatId, 'Ошибка при обновлении комментария');
-    }
-  }
-
-  private async manualEntryHandler(msg: TelegramBot.Message) {
-    const chatId = msg.chat.id;
-    try {
-      const match = msg.text.match(MANUAL_ENTRY_REGEX);
-      const key = match[1].toUpperCase();
-      const comment = match[2]?.trim();
-
-      if (!comment) {
-        this.bot.sendMessage(chatId, 'Комментарий не может быть пустым');
-        return;
-      }
-
-      await this.manualEntryService.upsertEntry(key, comment);
-      this.bot.sendMessage(chatId, `Запись ${key} сохранена`, {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: '➕ Добавить в текущие задачи',
-                callback_data: `manual_current_${key}`,
-              },
-            ],
-          ],
-        },
-      });
-    } catch (error: unknown) {
-      const { message, stack } = extractError(error);
-      this.logger.error(`Failed to save manual entry: ${message}`, stack);
-      this.bot.sendMessage(chatId, 'Ошибка при сохранении записи');
-    }
-  }
-
-  private async manualEntryMarkCurrentHandler(
-    key: string,
-    chatId: number,
-    messageId: number,
-    callbackQueryId: string,
-  ) {
-    const entry = await this.manualEntryService.setCurrent(key);
-    if (!entry) {
-      this.bot.answerCallbackQuery(callbackQueryId, {
-        text: 'Запись не найдена',
-        show_alert: true,
-      });
-      return;
-    }
-
-    this.bot.answerCallbackQuery(callbackQueryId, {
-      text: `${key} добавлена в текущие задачи`,
-    });
-    this.bot.editMessageReplyMarkup(
-      { inline_keyboard: [] },
-      { chat_id: chatId, message_id: messageId },
-    );
-  }
-
-  private async manualEntryInfoHandler(messageText: string, chatId: number) {
-    try {
-      const key = messageText.toUpperCase();
-      const entry = await this.manualEntryService.getByKey(key);
-
-      if (!entry) {
-        this.bot.sendMessage(
-          chatId,
-          `❗️❗️❗️ Запись по ключу ${key} не найдена ❗️❗️❗️`,
-        );
-        return;
-      }
-
-      const reply = this.reportBuilderService.buildManualEntryReport(entry);
-      await this.sendHtml(chatId, reply);
-    } catch (error: unknown) {
-      const { message, stack } = extractError(error);
-      this.logger.error(
-        `Failed to get manual entry [${messageText}]: ${message}`,
-        stack,
-      );
-      this.bot.sendMessage(chatId, 'Ошибка при получении записи');
-    }
-  }
-
-  private async reportAutoHandler(chatId: number, currentSprintOnly = false) {
-    try {
-      const report =
-        await this.reportBuilderService.generateAutoReport(currentSprintOnly);
-
-      if (!report) {
-        this.bot.sendMessage(chatId, 'Нет задач с комментариями для отчёта');
-        return;
-      }
-
-      await this.sendHtml(chatId, report);
-    } catch (error: unknown) {
-      const { message, stack } = extractError(error);
-      this.logger.error(`Failed to generate auto report: ${message}`, stack);
-      this.bot.sendMessage(chatId, 'Ошибка при генерации автоотчёта');
-    }
-  }
-
-  private async hiddenHandler(chatId: number) {
-    try {
-      const keyboard = await this.buildHiddenKeyboard();
-
-      if (!keyboard.inline_keyboard.length) {
-        this.bot.sendMessage(
-          chatId,
-          'Нет задач в статусах Awaiting Client Feedback / Blocked',
-        );
-        return;
-      }
-
-      this.bot.sendMessage(
-        chatId,
-        '🙈 — скрыта из автоотчёта, 👁 — показывается.\nНажмите на задачу, чтобы переключить видимость:',
-        { reply_markup: keyboard },
-      );
-    } catch (error: unknown) {
-      const { message, stack } = extractError(error);
-      this.logger.error(`Failed to build hidden tasks menu: ${message}`, stack);
-      this.bot.sendMessage(chatId, 'Ошибка при загрузке списка задач');
-    }
-  }
-
-  private async toggleHiddenHandler(
-    taskNumber: number,
-    chatId: number,
-    messageId: number,
-    callbackQueryId: string,
-  ) {
-    if (!Number.isInteger(taskNumber) || taskNumber <= 0) return;
-
-    const task = await this.taskService.getTaskByKey(taskNumber);
-    if (!task?.id) {
-      this.bot.answerCallbackQuery(callbackQueryId, {
-        text: 'Задача не найдена',
-        show_alert: true,
-      });
-      return;
-    }
-
-    await this.taskService.setTaskHidden(task.id, !task.isHidden);
-
-    this.bot.answerCallbackQuery(callbackQueryId, {
-      text: task.isHidden
-        ? `WA-${task.number} теперь в автоотчёте`
-        : `WA-${task.number} скрыта из автоотчёта`,
-    });
-
-    const keyboard = await this.buildHiddenKeyboard();
-    this.bot.editMessageReplyMarkup(keyboard, {
-      chat_id: chatId,
-      message_id: messageId,
-    });
-  }
-
-  private async buildHiddenKeyboard(): Promise<TelegramBot.InlineKeyboardMarkup> {
-    const tasks = await this.taskService.getHideableTasks();
-
-    return {
-      inline_keyboard: tasks.map((task: TaskEntity) => [
-        {
-          text: `${task.isHidden ? '🙈' : '👁'} WA-${task.number}: ${task.title}`,
-          callback_data: `hide_${task.number}`,
-        },
-      ]),
-    };
-  }
-
-  private async callsHandler(chatId: number) {
-    try {
-      const meetings = await this.calendarService.getTodayMeetings();
-      const digest = this.calendarService.buildDigest(
-        meetings,
-        'Созвоны сегодня:',
-      );
-
-      await this.sendHtml(chatId, digest);
-    } catch (error: unknown) {
-      const { message, stack } = extractError(error);
-      this.logger.error(`Failed to fetch today's meetings: ${message}`, stack);
-      this.bot.sendMessage(chatId, 'Ошибка при получении списка созвонов');
-    }
-  }
-
-  private async syncCallsHandler(chatId: number) {
-    try {
-      this.bot.sendMessage(chatId, 'Синхронизирую созвоны из календаря...');
-      await this.calendarService.syncMeetings();
-      this.bot.sendMessage(chatId, 'Готово');
-    } catch (error: unknown) {
-      const { message, stack } = extractError(error);
-      this.logger.error(`Failed to sync calendar meetings: ${message}`, stack);
-      this.bot.sendMessage(chatId, 'Ошибка при синхронизации созвонов');
-    }
-  }
-
   public async sendOwnerMessage(text: string): Promise<void> {
     const ownerChatId = this.configService.get<number>(
       'telegram-bot.ownerChatId',
     );
-    await this.sendHtml(ownerChatId, text);
+    await this.messenger.sendHtml(ownerChatId, text);
   }
 
   private async separatorHandler(msg: TelegramBot.Message) {
@@ -601,21 +332,6 @@ export class TelegramBotService {
     }
   }
 
-  private async syncTaskHandler(chatId: number) {
-    try {
-      this.bot.sendMessage(
-        chatId,
-        'Синхронизирую данные. Сообщу, когда все будет готово',
-      );
-      await this.taskService.syncTaskData();
-      this.bot.sendMessage(chatId, 'Готово');
-    } catch (error: unknown) {
-      const { message, stack } = extractError(error);
-      this.logger.error(`Failed to sync tasks: ${message}`, stack);
-      this.bot.sendMessage(chatId, 'Ошибка при синхронизации задач');
-    }
-  }
-
   private async runJiraScript(
     chatId: number,
     scriptName: string,
@@ -624,71 +340,11 @@ export class TelegramBotService {
     this.bot.sendMessage(chatId, 'Загружаю данные из Jira...');
     try {
       const result = await this.scriptRunner.runScript(scriptName, args);
-      await this.sendMarkdown(chatId, result || 'Пустой ответ');
+      await this.messenger.sendMarkdown(chatId, result || 'Пустой ответ');
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Jira script error [${scriptName}]: ${message}`, stack);
       this.bot.sendMessage(chatId, `Ошибка при выполнении запроса: ${message}`);
     }
-  }
-
-  private async sendMarkdown(chatId: number, text: string): Promise<void> {
-    const MAX_LENGTH = 4096;
-    const chunks =
-      text.length <= MAX_LENGTH ? [text] : this.splitMessage(text, MAX_LENGTH);
-
-    for (const chunk of chunks) {
-      try {
-        await this.bot.sendMessage(chatId, chunk, {
-          parse_mode: 'Markdown',
-          disable_web_page_preview: true,
-        });
-      } catch (error: unknown) {
-        const { message } = extractError(error);
-        this.logger.warn(
-          `Markdown send failed, retrying as plain text: ${message}`,
-        );
-        await this.bot.sendMessage(chatId, chunk, {
-          disable_web_page_preview: true,
-        });
-      }
-    }
-  }
-
-  private async sendHtml(chatId: number, text: string): Promise<void> {
-    const MAX_LENGTH = 4096;
-
-    if (text.length <= MAX_LENGTH) {
-      await this.bot.sendMessage(chatId, text, {
-        parse_mode: 'HTML',
-        disable_web_page_preview: true,
-      });
-      return;
-    }
-
-    const chunks = this.splitMessage(text, MAX_LENGTH);
-    for (const chunk of chunks) {
-      await this.bot.sendMessage(chatId, chunk, {
-        parse_mode: 'HTML',
-        disable_web_page_preview: true,
-      });
-    }
-  }
-
-  private splitMessage(text: string, maxLength: number): string[] {
-    const chunks: string[] = [];
-    let remaining = text;
-
-    while (remaining.length > maxLength) {
-      let splitAt = remaining.lastIndexOf('\n\n', maxLength);
-      if (splitAt <= 0) splitAt = remaining.lastIndexOf('\n', maxLength);
-      if (splitAt <= 0) splitAt = maxLength;
-
-      chunks.push(remaining.slice(0, splitAt));
-      remaining = remaining.slice(splitAt).replace(/^\n+/, '');
-    }
-
-    if (remaining) chunks.push(remaining);
-    return chunks;
   }
 }

@@ -6,6 +6,13 @@ import { ScriptRunnerModule } from '../script-runner';
 import { CalendarModule } from '../calendar';
 import { ManualEntryModule } from '../manual-entry';
 import { ReportModule } from '../report';
+import { TelegramMessengerService } from './telegram-messenger.service';
+import {
+  TaskBotHandlers,
+  ManualEntryBotHandlers,
+  CalendarBotHandlers,
+} from './handlers';
+
 @Module({
   imports: [
     ConfigModule,
@@ -15,7 +22,14 @@ import { ReportModule } from '../report';
     ManualEntryModule,
     ReportModule,
   ],
-  providers: [TelegramBotService, Logger],
+  providers: [
+    TelegramBotService,
+    Logger,
+    TelegramMessengerService,
+    TaskBotHandlers,
+    ManualEntryBotHandlers,
+    CalendarBotHandlers,
+  ],
   exports: [TelegramBotService],
 })
 export class TelegramBotModule {}
