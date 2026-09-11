@@ -60,7 +60,7 @@ export class ReportBuilderService {
   }
 
   public buildChildTaskReport(task: TaskEntity): string {
-    return `<blockquote>↳ ${this.buildTaskReport(task)}</blockquote>`;
+    return `<blockquote>${this.buildTaskReport(task)}</blockquote>`;
   }
 
   public buildNextPlannedReport(task: TaskEntity): string {
