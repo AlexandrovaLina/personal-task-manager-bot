@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { escapeHtml, extractError } from 'src/common/helpers';
 import { TaskService, TaskEntity, TaskState } from '../task';
 import { ManualEntryService, ManualEntryEntity } from '../manual-entry';
-import { ReportHeader } from './constants';
+import { ReportHeader, STATUS_EMOJI, DEFAULT_STATUS_EMOJI } from './constants';
 
 interface ReportItem {
   text: string;
@@ -19,49 +19,55 @@ export class ReportBuilderService {
     this.logger = new Logger(ReportBuilderService.name);
   }
 
+  private buildStatusLine(state: string): string {
+    const emoji = STATUS_EMOJI[state] ?? DEFAULT_STATUS_EMOJI;
+    return `<b>Статус</b> - ${emoji} ${state}`;
+  }
+
+  private buildTaskLink(task: TaskEntity): string {
+    const title = escapeHtml(task.title);
+    return `<a href="${task.url}"><b>WA-${task.number}</b>: ${title}</a>`;
+  }
+
   public buildTaskReport(task: TaskEntity): string {
     const comments = task.comments || 'Отсутствуют';
-    const title = escapeHtml(task.title);
-    return `Таска <a href="${task.url}">WA-${task.number}: ${title}</a>\nСтатус - ${task.state}\nКомментарии - ${comments}`;
+    return `${this.buildTaskLink(task)}\n${this.buildStatusLine(task.state)}\n<b>Комментарии</b> - ${comments}`;
   }
 
   public buildManualEntryReport(entry: ManualEntryEntity): string {
     const title = escapeHtml(entry.title);
-    return `<a href="${entry.url}">${entry.key}: ${title}</a>\nКомментарии - ${entry.comment}`;
+    return `<a href="${entry.url}"><b>${entry.key}</b>: ${title}</a>\n<b>Комментарии</b> - ${entry.comment}`;
   }
 
   public buildDelegatedParentReport(
     task: TaskEntity,
     childrenCount: number,
   ): string {
-    const title = escapeHtml(task.title);
     const subtaskWord = childrenCount === 1 ? 'подзадачи' : 'подзадач';
     return (
-      `⏳ Таска <a href="${task.url}">WA-${task.number}: ${title}</a>\n` +
-      `Статус - ${task.state}\n` +
+      `⏳ ${this.buildTaskLink(task)}\n` +
+      `${this.buildStatusLine(task.state)}\n` +
       `Ожидает ревью ${subtaskWord}:`
     );
   }
 
   public buildParentWithChildrenReport(task: TaskEntity): string {
-    const title = escapeHtml(task.title);
     return (
-      `Таска <a href="${task.url}">WA-${task.number}: ${title}</a>\n` +
-      `Статус - ${task.state}\n` +
+      `${this.buildTaskLink(task)}\n` +
+      `${this.buildStatusLine(task.state)}\n` +
       `Это родительская таска для:`
     );
   }
 
   public buildChildTaskReport(task: TaskEntity): string {
-    return `↳ ${this.buildTaskReport(task)}`;
+    return `<blockquote>↳ ${this.buildTaskReport(task)}</blockquote>`;
   }
 
   public buildNextPlannedReport(task: TaskEntity): string {
-    const title = escapeHtml(task.title);
     return (
       `${ReportHeader.NEXT_PLANNED}\n` +
-      `Таска <a href="${task.url}">WA-${task.number}: ${title}</a>\n` +
-      `Статус - ${task.state}`
+      `${this.buildTaskLink(task)}\n` +
+      `${this.buildStatusLine(task.state)}`
     );
   }
 
@@ -73,7 +79,7 @@ export class ReportBuilderService {
     if (!items.length) return null;
 
     const rendered = items.map((item) => {
-      const numbered = `${counter.value++}. ${item.text}`;
+      const numbered = `<b>${counter.value++}.</b> ${item.text}`;
       return item.children?.length
         ? [numbered, ...item.children].join('\n')
         : numbered;
@@ -87,7 +93,6 @@ export class ReportBuilderService {
     currentSprintOnly = false,
   ): Promise<string | null> {
     let dirtyTasks: TaskEntity[],
-      devAnalysisTasks: TaskEntity[],
       inProgressTasks: TaskEntity[],
       awaitingTasks: TaskEntity[],
       blockedTasks: TaskEntity[],
@@ -96,17 +101,12 @@ export class ReportBuilderService {
     try {
       [
         dirtyTasks,
-        devAnalysisTasks,
         inProgressTasks,
         awaitingTasks,
         blockedTasks,
         manualEntries,
       ] = await Promise.all([
         this.taskService.getDirtyTasks(),
-        this.taskService.getTasksByState(
-          TaskState.DEV_ANALYSIS,
-          currentSprintOnly,
-        ),
         this.taskService.getTasksByState(
           TaskState.IN_PROGRESS,
           currentSprintOnly,
@@ -127,7 +127,7 @@ export class ReportBuilderService {
       throw error;
     }
 
-    const currentTaskCandidates = [...devAnalysisTasks, ...inProgressTasks];
+    const currentTaskCandidates = inProgressTasks;
 
     const childrenByParent = new Map<string, TaskEntity[]>();
     if (currentTaskCandidates.length) {
