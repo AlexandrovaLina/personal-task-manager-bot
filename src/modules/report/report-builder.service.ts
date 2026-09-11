@@ -94,8 +94,14 @@ export class ReportBuilderService {
         manualEntries,
       ] = await Promise.all([
         this.taskService.getDirtyTasks(),
-        this.taskService.getTasksByState(TaskState.DEV_ANALYSIS),
-        this.taskService.getTasksByState(TaskState.IN_PROGRESS),
+        this.taskService.getTasksByState(
+          TaskState.DEV_ANALYSIS,
+          currentSprintOnly,
+        ),
+        this.taskService.getTasksByState(
+          TaskState.IN_PROGRESS,
+          currentSprintOnly,
+        ),
         this.taskService.getTasksByState(
           TaskState.AWAITING_CLIENT_FEEDBACK,
           currentSprintOnly,
@@ -165,6 +171,48 @@ export class ReportBuilderService {
         !nestedChildIds.has(t.id),
     );
 
+    const currentCandidateExternalIds = new Set(
+      currentTaskCandidates.map((t) => t.externalId),
+    );
+
+    const tasksNeedingParentContext = mainTasks.filter(
+      (t) =>
+        t.parentExternalId &&
+        !currentCandidateExternalIds.has(t.parentExternalId),
+    );
+    const contextParents = await this.taskService.getTasksByExternalIds([
+      ...new Set(
+        tasksNeedingParentContext.map((t) => t.parentExternalId as string),
+      ),
+    ]);
+    const contextParentByExternalId = new Map(
+      contextParents.map((p) => [p.externalId, p]),
+    );
+
+    const mainTaskGroups = new Map<
+      string,
+      { parent: TaskEntity; children: TaskEntity[] }
+    >();
+    for (const task of tasksNeedingParentContext) {
+      const parent = contextParentByExternalId.get(
+        task.parentExternalId as string,
+      );
+      if (!parent) continue;
+
+      const group = mainTaskGroups.get(parent.externalId) ?? {
+        parent,
+        children: [],
+      };
+      group.children.push(task);
+      mainTaskGroups.set(parent.externalId, group);
+    }
+
+    const plainMainTasks = mainTasks.filter(
+      (t) =>
+        !mainTaskGroups.has(t.externalId) &&
+        !(t.parentExternalId && mainTaskGroups.has(t.parentExternalId)),
+    );
+
     const currentManualEntries = manualEntries.filter((e) => e.isCurrent);
     const mainManualEntries = manualEntries.filter((e) => !e.isCurrent);
 
@@ -179,7 +227,11 @@ export class ReportBuilderService {
           children: children.map((child) => this.buildChildTaskReport(child)),
         };
       }),
-      ...mainTasks.map((task) => ({ text: this.buildTaskReport(task) })),
+      ...[...mainTaskGroups.values()].map(({ parent, children }) => ({
+        text: this.buildParentWithChildrenReport(parent),
+        children: children.map((child) => this.buildChildTaskReport(child)),
+      })),
+      ...plainMainTasks.map((task) => ({ text: this.buildTaskReport(task) })),
     ];
 
     const currentItems: ReportItem[] = [

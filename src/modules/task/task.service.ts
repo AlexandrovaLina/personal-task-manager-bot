@@ -193,6 +193,18 @@ export class TaskService {
     });
   }
 
+  public async getTasksByExternalIds(
+    externalIds: string[],
+  ): Promise<TaskEntity[]> {
+    if (!externalIds.length) return [];
+
+    const taskRepository = this.datasource.getRepository(TaskEntity);
+
+    return taskRepository.find({
+      where: { externalId: In(externalIds), deletedAt: IsNull() },
+    });
+  }
+
   public async getHideableTasks(): Promise<TaskEntity[]> {
     const taskRepository = this.datasource.getRepository(TaskEntity);
 
