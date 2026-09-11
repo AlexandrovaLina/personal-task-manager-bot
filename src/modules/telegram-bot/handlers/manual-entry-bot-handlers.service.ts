@@ -25,15 +25,12 @@ export class ManualEntryBotHandlers {
       const comment = match[2]?.trim();
 
       if (!comment) {
-        this.messenger.bot.sendMessage(
-          chatId,
-          'Комментарий не может быть пустым',
-        );
+        this.messenger.sendMessage(chatId, 'Комментарий не может быть пустым');
         return;
       }
 
       await this.manualEntryService.upsertEntry(key, comment);
-      this.messenger.bot.sendMessage(chatId, `Запись ${key} сохранена`, {
+      this.messenger.sendMessage(chatId, `Запись ${key} сохранена`, {
         reply_markup: {
           inline_keyboard: [
             [
@@ -48,7 +45,7 @@ export class ManualEntryBotHandlers {
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to save manual entry: ${message}`, stack);
-      this.messenger.bot.sendMessage(chatId, 'Ошибка при сохранении записи');
+      this.messenger.sendMessage(chatId, 'Ошибка при сохранении записи');
     }
   }
 
@@ -82,7 +79,7 @@ export class ManualEntryBotHandlers {
       const entry = await this.manualEntryService.getByKey(key);
 
       if (!entry) {
-        this.messenger.bot.sendMessage(
+        this.messenger.sendMessage(
           chatId,
           `❗️❗️❗️ Запись по ключу ${key} не найдена ❗️❗️❗️`,
         );
@@ -97,7 +94,7 @@ export class ManualEntryBotHandlers {
         `Failed to get manual entry [${messageText}]: ${message}`,
         stack,
       );
-      this.messenger.bot.sendMessage(chatId, 'Ошибка при получении записи');
+      this.messenger.sendMessage(chatId, 'Ошибка при получении записи');
     }
   }
 }

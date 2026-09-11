@@ -24,7 +24,7 @@ export class TaskBotHandlers {
     try {
       const taskNumber = Number(messageText);
       if (!Number.isInteger(taskNumber) || taskNumber <= 0) {
-        this.messenger.bot.sendMessage(
+        this.messenger.sendMessage(
           chatId,
           'Номер задачи должен быть положительным целым числом',
         );
@@ -33,7 +33,7 @@ export class TaskBotHandlers {
 
       const task = await this.taskService.getTaskByKey(taskNumber);
       if (!task?.id) {
-        this.messenger.bot.sendMessage(
+        this.messenger.sendMessage(
           chatId,
           `❗️❗️❗️ Таска с таким номером не найдена ❗️❗️❗️`,
         );
@@ -48,7 +48,7 @@ export class TaskBotHandlers {
         `Failed to get task [${messageText}]: ${message}`,
         stack,
       );
-      this.messenger.bot.sendMessage(chatId, 'Ошибка при получении задачи');
+      this.messenger.sendMessage(chatId, 'Ошибка при получении задачи');
     }
   }
 
@@ -56,7 +56,7 @@ export class TaskBotHandlers {
     try {
       const match = msg.text.match(UPDATE_TASK_COMMENTS_REGEX);
       if (!match) {
-        this.messenger.bot.sendMessage(
+        this.messenger.sendMessage(
           chatId,
           'Неверный формат. Используйте: <номер>: <комментарий>',
         );
@@ -67,16 +67,13 @@ export class TaskBotHandlers {
       const rawComment = match[2]?.trim();
 
       if (!rawComment) {
-        this.messenger.bot.sendMessage(
-          chatId,
-          'Комментарий не может быть пустым',
-        );
+        this.messenger.sendMessage(chatId, 'Комментарий не может быть пустым');
         return;
       }
 
       const task = await this.taskService.getTaskByKey(+taskNumber);
       if (!task?.id) {
-        this.messenger.bot.sendMessage(
+        this.messenger.sendMessage(
           chatId,
           `❗️❗️❗️ Таска с таким номером не найдена ❗️❗️❗️`,
         );
@@ -90,17 +87,14 @@ export class TaskBotHandlers {
         comments: comment,
         isCommentDirty: true,
       });
-      this.messenger.bot.sendMessage(
+      this.messenger.sendMessage(
         chatId,
         `Таска с номером ${taskNumber} успешно обновлена`,
       );
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to update task comment: ${message}`, stack);
-      this.messenger.bot.sendMessage(
-        chatId,
-        'Ошибка при обновлении комментария',
-      );
+      this.messenger.sendMessage(chatId, 'Ошибка при обновлении комментария');
     }
   }
 
@@ -111,7 +105,7 @@ export class TaskBotHandlers {
       } catch (syncError: unknown) {
         const { message, stack } = extractError(syncError);
         this.logger.error(`Auto-sync before report failed: ${message}`, stack);
-        this.messenger.bot.sendMessage(
+        this.messenger.sendMessage(
           chatId,
           '⚠️ Не удалось синхронизировать недавние обновления из Jira — отчёт построен по текущим данным в БД',
         );
@@ -121,7 +115,7 @@ export class TaskBotHandlers {
         await this.reportBuilderService.generateAutoReport(currentSprintOnly);
 
       if (!report) {
-        this.messenger.bot.sendMessage(
+        this.messenger.sendMessage(
           chatId,
           'Нет задач с комментариями для отчёта',
         );
@@ -132,7 +126,7 @@ export class TaskBotHandlers {
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to generate auto report: ${message}`, stack);
-      this.messenger.bot.sendMessage(chatId, 'Ошибка при генерации автоотчёта');
+      this.messenger.sendMessage(chatId, 'Ошибка при генерации автоотчёта');
     }
   }
 
@@ -141,14 +135,14 @@ export class TaskBotHandlers {
       const keyboard = await this.buildHiddenKeyboard();
 
       if (!keyboard.inline_keyboard.length) {
-        this.messenger.bot.sendMessage(
+        this.messenger.sendMessage(
           chatId,
           'Нет задач в статусах Awaiting Client Feedback / Blocked',
         );
         return;
       }
 
-      this.messenger.bot.sendMessage(
+      this.messenger.sendMessage(
         chatId,
         '🙈 — скрыта из автоотчёта, 👁 — показывается.\nНажмите на задачу, чтобы переключить видимость:',
         { reply_markup: keyboard },
@@ -156,10 +150,7 @@ export class TaskBotHandlers {
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to build hidden tasks menu: ${message}`, stack);
-      this.messenger.bot.sendMessage(
-        chatId,
-        'Ошибка при загрузке списка задач',
-      );
+      this.messenger.sendMessage(chatId, 'Ошибка при загрузке списка задач');
     }
   }
 
@@ -210,16 +201,16 @@ export class TaskBotHandlers {
 
   public async syncFullTaskHandler(chatId: number) {
     try {
-      this.messenger.bot.sendMessage(
+      this.messenger.sendMessage(
         chatId,
         'Полная синхронизация всех задач — может занять несколько секунд...',
       );
       await this.taskService.syncTaskData();
-      this.messenger.bot.sendMessage(chatId, 'Готово');
+      this.messenger.sendMessage(chatId, 'Готово');
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to full-sync tasks: ${message}`, stack);
-      this.messenger.bot.sendMessage(chatId, 'Ошибка при синхронизации задач');
+      this.messenger.sendMessage(chatId, 'Ошибка при синхронизации задач');
     }
   }
 }

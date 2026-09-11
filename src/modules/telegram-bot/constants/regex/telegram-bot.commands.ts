@@ -8,4 +8,5 @@ export const BotCommands = {
   CALLS: /\/calls/,
   SYNC_CALLS: /\/sync_calls/,
   HIDDEN: /\/hidden/,
+  CHATS: /\/chats/,
 };

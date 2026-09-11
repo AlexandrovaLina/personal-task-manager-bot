@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as TelegramBot from 'node-telegram-bot-api';
 import { extractError } from 'src/common/helpers';
+import { TelegramChatService } from './telegram-chat.service';
 
 @Injectable()
 export class TelegramMessengerService {
@@ -10,6 +11,7 @@ export class TelegramMessengerService {
   constructor(
     private readonly logger: Logger,
     private readonly configService: ConfigService,
+    private readonly chatService: TelegramChatService,
   ) {
     this.logger = new Logger(TelegramMessengerService.name);
     this.bot = new TelegramBot(
@@ -20,7 +22,18 @@ export class TelegramMessengerService {
     );
   }
 
+  public async sendMessage(
+    chatId: number,
+    text: string,
+    options?: TelegramBot.SendMessageOptions,
+  ): Promise<void> {
+    if (!(await this.chatService.isWriteAllowed(chatId))) return;
+    await this.bot.sendMessage(chatId, text, options);
+  }
+
   public async sendMarkdown(chatId: number, text: string): Promise<void> {
+    if (!(await this.chatService.isWriteAllowed(chatId))) return;
+
     const MAX_LENGTH = 4096;
     const chunks =
       text.length <= MAX_LENGTH ? [text] : this.splitMessage(text, MAX_LENGTH);
@@ -44,6 +57,8 @@ export class TelegramMessengerService {
   }
 
   public async sendHtml(chatId: number, text: string): Promise<void> {
+    if (!(await this.chatService.isWriteAllowed(chatId))) return;
+
     const MAX_LENGTH = 4096;
 
     if (text.length <= MAX_LENGTH) {

@@ -18,6 +18,7 @@ import {
   ManualEntryBotHandlers,
   CalendarBotHandlers,
   JiraReportBotHandlers,
+  ChatBotHandlers,
 } from './handlers';
 
 @Injectable()
@@ -34,6 +35,7 @@ export class TelegramBotService {
     private readonly manualEntryHandlers: ManualEntryBotHandlers,
     private readonly calendarHandlers: CalendarBotHandlers,
     private readonly jiraReportHandlers: JiraReportBotHandlers,
+    private readonly chatHandlers: ChatBotHandlers,
   ) {
     this.logger = new Logger(TelegramBotService.name);
   }
@@ -67,6 +69,10 @@ export class TelegramBotService {
         command: 'hidden',
         description: 'Видимость заблокированных/ожидающих задач в автоотчёте',
       },
+      {
+        command: 'chats',
+        description: 'Список чатов бота (переименование, разрешение писать)',
+      },
     ]);
 
     const mainMenu = {
@@ -86,6 +92,7 @@ export class TelegramBotService {
             { text: '🔄 Синк календаря', callback_data: 'menu_sync_calls' },
           ],
           [{ text: '🙈 Скрытые задачи', callback_data: 'menu_hidden' }],
+          [{ text: '💬 Чаты', callback_data: 'menu_chats' }],
           [{ text: '🔴 Сброс периода', callback_data: 'menu_reset' }],
           [{ text: '❓ Help', callback_data: 'help' }],
         ],
@@ -119,7 +126,7 @@ export class TelegramBotService {
     this.bot.onText(BotCommands.START, (msg) => {
       this.trackPrivateChat(msg);
       const chatId = msg.chat.id;
-      this.bot.sendMessage(
+      this.messenger.sendMessage(
         chatId,
         'Добро пожаловать в меню. Выберите опцию:',
         mainMenu,
@@ -171,12 +178,17 @@ export class TelegramBotService {
       await this.jiraReportHandlers.report24Handler(msg.chat.id);
     });
 
+    this.bot.onText(BotCommands.CHATS, async (msg) => {
+      this.trackPrivateChat(msg);
+      await this.chatHandlers.listChatsHandler(msg.chat.id);
+    });
+
     this.bot.on('callback_query', async (callbackQuery) => {
       const message = callbackQuery.message;
       const chatId = message.chat.id;
       try {
         if (callbackQuery.data === 'help') {
-          this.bot.sendMessage(
+          this.messenger.sendMessage(
             chatId,
             `Доступные команды:
 /report_auto - автоотчет по задачам с комментариями
@@ -186,6 +198,7 @@ export class TelegramBotService {
 /sync_calls - синхронизация созвонов из календаря
 /hidden - видимость заблокированных/ожидающих задач в автоотчёте
 /sync_full - полная синхронизация из Jira (автоотчёты синхронизируют недавние обновления сами)
+/chats - список чатов бота (переименование, разрешение писать)
 
 Обновить комментарий: <номер>: <текст>
 /reset или ---- - сбросить данные, начать новый период`,
@@ -217,6 +230,9 @@ export class TelegramBotService {
               break;
             case 'hidden':
               await this.taskHandlers.hiddenHandler(chatId);
+              break;
+            case 'chats':
+              await this.chatHandlers.listChatsHandler(chatId);
               break;
             case 'reset':
               await this.resetHandler(
@@ -250,6 +266,27 @@ export class TelegramBotService {
 
           return;
         }
+        if (callbackQuery.data.startsWith('chat_rename_')) {
+          const targetChatId = callbackQuery.data.replace('chat_rename_', '');
+          await this.chatHandlers.startRenameHandler(
+            chatId,
+            targetChatId,
+            callbackQuery.id,
+          );
+
+          return;
+        }
+        if (callbackQuery.data.startsWith('chat_toggle_')) {
+          const targetChatId = callbackQuery.data.replace('chat_toggle_', '');
+          await this.chatHandlers.toggleWriteHandler(
+            targetChatId,
+            chatId,
+            message.message_id,
+            callbackQuery.id,
+          );
+
+          return;
+        }
 
         this.bot.answerCallbackQuery(callbackQuery.id, { show_alert: false });
       } catch (error: unknown) {
@@ -258,7 +295,22 @@ export class TelegramBotService {
           `Callback query error [${callbackQuery.data}]: ${message}`,
           stack,
         );
-        this.bot.sendMessage(chatId, 'Произошла ошибка, попробуйте ещё раз');
+        this.messenger.sendMessage(
+          chatId,
+          'Произошла ошибка, попробуйте ещё раз',
+        );
+      }
+    });
+
+    this.bot.on('message', async (msg) => {
+      try {
+        await this.chatHandlers.handlePendingMessage(msg);
+      } catch (error: unknown) {
+        const { message, stack } = extractError(error);
+        this.logger.error(
+          `Failed to handle pending chat rename: ${message}`,
+          stack,
+        );
       }
     });
 
@@ -278,12 +330,13 @@ export class TelegramBotService {
     if (msg.chat.type === 'private') {
       this.privateChatIds.add(msg.chat.id);
     }
+    void this.chatHandlers.trackIncomingChat(msg);
   }
 
   private async notifyOtherPrivateChats(excludeChatId: number, text: string) {
     for (const chatId of this.privateChatIds) {
       if (chatId === excludeChatId) continue;
-      this.bot.sendMessage(chatId, text).catch((err) => {
+      this.messenger.sendMessage(chatId, text).catch((err) => {
         this.logger.warn(`Failed to notify chat ${chatId}: ${err.message}`);
       });
     }
@@ -306,7 +359,7 @@ export class TelegramBotService {
       const manualEntries = await this.manualEntryService.getAllEntries();
 
       if (!dirtyTasks.length && !manualEntries.length) {
-        this.bot.sendMessage(chatId, 'Нет данных для сброса');
+        this.messenger.sendMessage(chatId, 'Нет данных для сброса');
         return;
       }
 
@@ -314,7 +367,7 @@ export class TelegramBotService {
       await this.manualEntryService.resetEntries();
 
       const totalCount = dirtyTasks.length + manualEntries.length;
-      this.bot.sendMessage(
+      this.messenger.sendMessage(
         chatId,
         `———————————————————————————————\nДанные сброшены (${totalCount} задач). Новый рабочий период начат.`,
       );
@@ -326,7 +379,7 @@ export class TelegramBotService {
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to reset data: ${message}`, stack);
-      this.bot.sendMessage(chatId, 'Ошибка при сбросе данных');
+      this.messenger.sendMessage(chatId, 'Ошибка при сбросе данных');
     }
   }
 }

@@ -14,7 +14,7 @@ export class JiraReportBotHandlers {
   }
 
   public async report24Handler(chatId: number) {
-    this.messenger.bot.sendMessage(chatId, 'Загружаю данные из Jira...');
+    this.messenger.sendMessage(chatId, 'Загружаю данные из Jira...');
     try {
       const report =
         await this.jiraActivityReportService.generateRecentActivityReport();
@@ -22,7 +22,7 @@ export class JiraReportBotHandlers {
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Report24 error: ${message}`, stack);
-      this.messenger.bot.sendMessage(
+      this.messenger.sendMessage(
         chatId,
         `Ошибка при выполнении запроса: ${message}`,
       );
