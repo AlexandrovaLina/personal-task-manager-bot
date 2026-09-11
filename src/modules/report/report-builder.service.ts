@@ -30,12 +30,16 @@ export class ReportBuilderService {
     return `<a href="${entry.url}">${entry.key}: ${title}</a>\nКомментарии - ${entry.comment}`;
   }
 
-  public buildDelegatedParentReport(task: TaskEntity): string {
+  public buildDelegatedParentReport(
+    task: TaskEntity,
+    childrenCount: number,
+  ): string {
     const title = escapeHtml(task.title);
+    const subtaskWord = childrenCount === 1 ? 'подзадачи' : 'подзадач';
     return (
       `⏳ Таска <a href="${task.url}">WA-${task.number}: ${title}</a>\n` +
       `Статус - ${task.state}\n` +
-      `Ожидает ревью подзадачи:`
+      `Ожидает ревью ${subtaskWord}:`
     );
   }
 
@@ -168,12 +172,13 @@ export class ReportBuilderService {
       ...mainManualEntries.map((entry) => ({
         text: this.buildManualEntryReport(entry),
       })),
-      ...delegatedParents.map((task) => ({
-        text: this.buildDelegatedParentReport(task),
-        children: (childrenByParent.get(task.externalId) ?? []).map((child) =>
-          this.buildChildTaskReport(child),
-        ),
-      })),
+      ...delegatedParents.map((task) => {
+        const children = childrenByParent.get(task.externalId) ?? [];
+        return {
+          text: this.buildDelegatedParentReport(task, children.length),
+          children: children.map((child) => this.buildChildTaskReport(child)),
+        };
+      }),
       ...mainTasks.map((task) => ({ text: this.buildTaskReport(task) })),
     ];
 
