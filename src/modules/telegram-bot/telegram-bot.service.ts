@@ -47,7 +47,7 @@ export class TelegramBotService {
 
     this.bot.setMyCommands([
       { command: 'start', description: 'Главное меню' },
-      { command: 'sync', description: 'Синхронизация из Jira' },
+      { command: 'sync_full', description: 'Полная синхронизация из Jira' },
       {
         command: 'report_auto',
         description: 'Автоотчет по задачам с комментариями',
@@ -82,7 +82,7 @@ export class TelegramBotService {
           [{ text: '📋 Отчёт за 24ч', callback_data: 'menu_report24' }],
           [{ text: '📅 Созвоны сегодня', callback_data: 'menu_calls' }],
           [
-            { text: '🔄 Синк Jira', callback_data: 'menu_sync' },
+            { text: '🔄 Синк Jira (полный)', callback_data: 'menu_sync_full' },
             { text: '🔄 Синк календаря', callback_data: 'menu_sync_calls' },
           ],
           [{ text: '🙈 Скрытые задачи', callback_data: 'menu_hidden' }],
@@ -126,9 +126,9 @@ export class TelegramBotService {
       );
     });
 
-    this.bot.onText(BotCommands.SYNC, async (msg) => {
+    this.bot.onText(BotCommands.SYNC_FULL, async (msg) => {
       this.trackPrivateChat(msg);
-      await this.taskHandlers.syncTaskHandler(msg.chat.id);
+      await this.taskHandlers.syncFullTaskHandler(msg.chat.id);
     });
 
     this.bot.onText(BotCommands.SYNC_CALLS, async (msg) => {
@@ -185,7 +185,7 @@ export class TelegramBotService {
 /calls - созвоны на сегодня
 /sync_calls - синхронизация созвонов из календаря
 /hidden - видимость заблокированных/ожидающих задач в автоотчёте
-/sync - синхронизация из Jira
+/sync_full - полная синхронизация из Jira (автоотчёты синхронизируют недавние обновления сами)
 
 Обновить комментарий: <номер>: <текст>
 /reset или ---- - сбросить данные, начать новый период`,
@@ -209,8 +209,8 @@ export class TelegramBotService {
             case 'calls':
               await this.calendarHandlers.callsHandler(chatId);
               break;
-            case 'sync':
-              await this.taskHandlers.syncTaskHandler(chatId);
+            case 'sync_full':
+              await this.taskHandlers.syncFullTaskHandler(chatId);
               break;
             case 'sync_calls':
               await this.calendarHandlers.syncCallsHandler(chatId);

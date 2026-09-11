@@ -63,9 +63,15 @@ export class TaskService {
     }
   }
 
-  public async syncTaskData(): Promise<void> {
+  /**
+   * @param updatedWithinDays When set, only pulls issues updated within this
+   * many days — fast, but a partial view, so the soft-delete reconciliation
+   * (which assumes the fetched set is everything currently assigned) is
+   * skipped. Omit for the full sync used by the daily cron.
+   */
+  public async syncTaskData(updatedWithinDays?: number): Promise<void> {
     try {
-      const data = await this.jiraService.getTasks();
+      const data = await this.jiraService.getTasks(updatedWithinDays);
 
       if (!data?.issues) {
         this.logger.error('Jira returned invalid response: missing issues');
@@ -110,14 +116,18 @@ export class TaskService {
       );
       await this.bulkUpsert(taskData);
 
-      if (activeExternalIds.length) {
+      if (!updatedWithinDays && activeExternalIds.length) {
         await taskRepository.softDelete({
           externalId: Not(In(activeExternalIds)),
           deletedAt: IsNull(),
         });
       }
 
-      this.logger.log(`Synced ${taskData.length} tasks from Jira`);
+      this.logger.log(
+        updatedWithinDays
+          ? `Synced ${taskData.length} tasks updated in the last ${updatedWithinDays}d from Jira`
+          : `Synced ${taskData.length} tasks from Jira`,
+      );
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to sync tasks: ${message}`, stack);

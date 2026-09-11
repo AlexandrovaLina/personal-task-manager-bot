@@ -7,6 +7,8 @@ import { TelegramMessengerService } from '../telegram-messenger.service';
 import { UPDATE_TASK_COMMENTS_REGEX } from '../constants';
 import { entitiesToHtml } from '../helpers';
 
+const RECENT_SYNC_WINDOW_DAYS = 4;
+
 @Injectable()
 export class TaskBotHandlers {
   constructor(
@@ -104,6 +106,17 @@ export class TaskBotHandlers {
 
   public async reportAutoHandler(chatId: number, currentSprintOnly = false) {
     try {
+      try {
+        await this.taskService.syncTaskData(RECENT_SYNC_WINDOW_DAYS);
+      } catch (syncError: unknown) {
+        const { message, stack } = extractError(syncError);
+        this.logger.error(`Auto-sync before report failed: ${message}`, stack);
+        this.messenger.bot.sendMessage(
+          chatId,
+          '⚠️ Не удалось синхронизировать недавние обновления из Jira — отчёт построен по текущим данным в БД',
+        );
+      }
+
       const report =
         await this.reportBuilderService.generateAutoReport(currentSprintOnly);
 
@@ -195,17 +208,17 @@ export class TaskBotHandlers {
     };
   }
 
-  public async syncTaskHandler(chatId: number) {
+  public async syncFullTaskHandler(chatId: number) {
     try {
       this.messenger.bot.sendMessage(
         chatId,
-        'Синхронизирую данные. Сообщу, когда все будет готово',
+        'Полная синхронизация всех задач — может занять несколько секунд...',
       );
       await this.taskService.syncTaskData();
       this.messenger.bot.sendMessage(chatId, 'Готово');
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
-      this.logger.error(`Failed to sync tasks: ${message}`, stack);
+      this.logger.error(`Failed to full-sync tasks: ${message}`, stack);
       this.messenger.bot.sendMessage(chatId, 'Ошибка при синхронизации задач');
     }
   }

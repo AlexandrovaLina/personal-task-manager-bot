@@ -22,9 +22,16 @@ export class JiraService {
 
   private readonly maxResults = 100;
   private readonly maxPages = 20;
-  private readonly updatedWindowDays = 90;
 
-  public async getTasks(): Promise<JiraSearchResponse> {
+  /**
+   * @param updatedWithinDays When set, only fetches issues updated within this
+   * many days (a fast, partial view — the caller must not treat the result as
+   * the full assigned set). Omit for the complete set of currently assigned
+   * issues, regardless of when they were last touched.
+   */
+  public async getTasks(
+    updatedWithinDays?: number,
+  ): Promise<JiraSearchResponse> {
     try {
       const url = `${this.baseUrl}/search/jql`;
       const headers = {
@@ -32,7 +39,10 @@ export class JiraService {
         Accept: 'application/json',
         'Content-Type': 'application/json',
       };
-      const jql = `project=${this.projectKey} AND assignee=currentUser() AND updated >= -${this.updatedWindowDays}d ORDER BY updated DESC`;
+      const dateFilter = updatedWithinDays
+        ? ` AND updated >= -${updatedWithinDays}d`
+        : '';
+      const jql = `project=${this.projectKey} AND assignee=currentUser()${dateFilter} ORDER BY updated DESC`;
 
       const issues: JiraIssue[] = [];
       let nextPageToken: string | undefined;
@@ -58,9 +68,12 @@ export class JiraService {
       }
 
       if (!isLast) {
+        const scope = updatedWithinDays
+          ? `for the last ${updatedWithinDays} days`
+          : 'for all currently assigned issues';
         this.logger.warn(
           `Jira search hit the ${this.maxPages}-page safety cap ` +
-            `(${issues.length} issues fetched for the last ${this.updatedWindowDays} days) — result may still be truncated.`,
+            `(${issues.length} issues fetched ${scope}) — result may still be truncated.`,
         );
       }
 
