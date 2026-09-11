@@ -8,7 +8,6 @@ import {
   In,
   UpdateResult,
 } from 'typeorm';
-import { CreateTaskDto } from './dto';
 import { withTransaction, extractError } from 'src/common/helpers';
 import { JiraService } from '../jira/jira.service';
 import { JiraIssue } from '../jira/interfaces';
@@ -36,14 +35,6 @@ export class TaskService {
     private readonly manualEntryService: ManualEntryService,
   ) {
     this.logger = new Logger(TaskService.name);
-  }
-
-  public async create(args: CreateTaskDto): Promise<TaskEntity> {
-    const taskRepository = this.datasource.getRepository(TaskEntity);
-
-    const data = taskRepository.create(args);
-
-    return data;
   }
 
   public async update(
