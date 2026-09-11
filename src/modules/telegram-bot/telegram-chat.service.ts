@@ -52,8 +52,16 @@ export class TelegramChatService {
   }
 
   public async isWriteAllowed(chatId: number): Promise<boolean> {
-    const chat = await this.getChatById(chatId);
-    return chat?.isWriteAllowed ?? true;
+    try {
+      const chat = await this.getChatById(chatId);
+      return chat?.isWriteAllowed ?? true;
+    } catch (error: unknown) {
+      const { message } = extractError(error);
+      this.logger.warn(
+        `Failed to check write permission for chat ${chatId}, defaulting to allowed: ${message}`,
+      );
+      return true;
+    }
   }
 
   public async renameChat(chatId: number, name: string): Promise<void> {
