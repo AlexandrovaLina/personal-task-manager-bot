@@ -8,15 +8,9 @@ import {
   In,
   UpdateResult,
 } from 'typeorm';
-import { withTransaction, extractError, escapeHtml } from 'src/common/helpers';
+import { withTransaction, extractError } from 'src/common/helpers';
 import { JiraService, JiraIssue } from '../jira';
-import { ManualEntryService, ManualEntryEntity } from '../manual-entry';
-import { TaskState, ReportHeader, HIDEABLE_STATES } from './constants';
-
-interface ReportItem {
-  text: string;
-  children?: string[];
-}
+import { HIDEABLE_STATES } from './constants';
 
 @Injectable()
 export class TaskService {
@@ -24,7 +18,6 @@ export class TaskService {
     private readonly logger: Logger,
     private readonly datasource: DataSource,
     private readonly jiraService: JiraService,
-    private readonly manualEntryService: ManualEntryService,
   ) {
     this.logger = new Logger(TaskService.name);
   }
@@ -140,13 +133,6 @@ export class TaskService {
     return task;
   }
 
-  public buildTaskReport(task: TaskEntity): string {
-    const comments = task.comments || 'Отсутствуют';
-    const title = escapeHtml(task.title);
-    const report = `Таска <a href="${task.url}">WA-${task.number}: ${title}</a>\nСтатус - ${task.state}\nКомментарии - ${comments}`;
-    return report;
-  }
-
   public async getDirtyTasks(currentSprintOnly = false): Promise<TaskEntity[]> {
     const taskRepository = this.datasource.getRepository(TaskEntity);
 
@@ -185,6 +171,18 @@ export class TaskService {
     });
   }
 
+  public async getChildrenByParentIds(
+    parentExternalIds: string[],
+  ): Promise<TaskEntity[]> {
+    if (!parentExternalIds.length) return [];
+
+    const taskRepository = this.datasource.getRepository(TaskEntity);
+
+    return taskRepository.find({
+      where: { parentExternalId: In(parentExternalIds), deletedAt: IsNull() },
+    });
+  }
+
   public async getHideableTasks(): Promise<TaskEntity[]> {
     const taskRepository = this.datasource.getRepository(TaskEntity);
 
@@ -209,201 +207,5 @@ export class TaskService {
     }
 
     return false;
-  }
-
-  public buildManualEntryReport(entry: ManualEntryEntity): string {
-    const title = escapeHtml(entry.title);
-    return `<a href="${entry.url}">${entry.key}: ${title}</a>\nКомментарии - ${entry.comment}`;
-  }
-
-  public buildDelegatedParentReport(task: TaskEntity): string {
-    const title = escapeHtml(task.title);
-    return (
-      `⏳ Таска <a href="${task.url}">WA-${task.number}: ${title}</a>\n` +
-      `Статус - ${task.state}\n` +
-      `Ожидает ревью подзадачи:`
-    );
-  }
-
-  public buildParentWithChildrenReport(task: TaskEntity): string {
-    const title = escapeHtml(task.title);
-    return (
-      `Таска <a href="${task.url}">WA-${task.number}: ${title}</a>\n` +
-      `Статус - ${task.state}\n` +
-      `Это родительская таска для:`
-    );
-  }
-
-  public buildChildTaskReport(task: TaskEntity): string {
-    return `↳ ${this.buildTaskReport(task)}`;
-  }
-
-  private buildSection(
-    items: ReportItem[],
-    counter: { value: number },
-    header?: ReportHeader,
-  ): string | null {
-    if (!items.length) return null;
-
-    const rendered = items.map((item) => {
-      const numbered = `${counter.value++}. ${item.text}`;
-      return item.children?.length
-        ? [numbered, ...item.children].join('\n')
-        : numbered;
-    });
-
-    const body = rendered.join('\n\n');
-    return header ? `${header}\n\n${body}` : body;
-  }
-
-  public async generateAutoReport(
-    currentSprintOnly = false,
-  ): Promise<string | null> {
-    let dirtyTasks: TaskEntity[],
-      devAnalysisTasks: TaskEntity[],
-      inProgressTasks: TaskEntity[],
-      awaitingTasks: TaskEntity[],
-      blockedTasks: TaskEntity[],
-      manualEntries: ManualEntryEntity[];
-
-    try {
-      [
-        dirtyTasks,
-        devAnalysisTasks,
-        inProgressTasks,
-        awaitingTasks,
-        blockedTasks,
-        manualEntries,
-      ] = await Promise.all([
-        this.getDirtyTasks(),
-        this.getTasksByState(TaskState.DEV_ANALYSIS),
-        this.getTasksByState(TaskState.IN_PROGRESS),
-        this.getTasksByState(
-          TaskState.AWAITING_CLIENT_FEEDBACK,
-          currentSprintOnly,
-        ),
-        this.getTasksByState(TaskState.BLOCKED, currentSprintOnly),
-        this.manualEntryService.getAllEntries(),
-      ]);
-    } catch (error: unknown) {
-      const { message, stack } = extractError(error);
-      this.logger.error(
-        `Failed to fetch tasks for auto report: ${message}`,
-        stack,
-      );
-      throw error;
-    }
-
-    const currentTaskCandidates = [...devAnalysisTasks, ...inProgressTasks];
-
-    const childrenByParent = new Map<string, TaskEntity[]>();
-    if (currentTaskCandidates.length) {
-      const taskRepository = this.datasource.getRepository(TaskEntity);
-      const children = await taskRepository.find({
-        where: {
-          parentExternalId: In(currentTaskCandidates.map((t) => t.externalId)),
-          deletedAt: IsNull(),
-        },
-      });
-
-      for (const child of children) {
-        const siblings = childrenByParent.get(child.parentExternalId) ?? [];
-        siblings.push(child);
-        childrenByParent.set(child.parentExternalId, siblings);
-      }
-    }
-
-    const hasReviewChild = (externalId: string): boolean =>
-      (childrenByParent.get(externalId) ?? []).some(
-        (child) => child.state === TaskState.UNDER_REVIEW,
-      );
-
-    const plainCurrentTasks = currentTaskCandidates.filter(
-      (t) => !childrenByParent.has(t.externalId),
-    );
-    const delegatedParents = currentTaskCandidates.filter((t) =>
-      hasReviewChild(t.externalId),
-    );
-    const parentsWithChildren = currentTaskCandidates.filter(
-      (t) =>
-        childrenByParent.has(t.externalId) && !hasReviewChild(t.externalId),
-    );
-    const nestedChildIds = new Set(
-      [...childrenByParent.values()].flat().map((t) => t.id),
-    );
-
-    const visibleAwaitingTasks = awaitingTasks.filter((t) => !t.isHidden);
-    const visibleBlockedTasks = blockedTasks.filter((t) => !t.isHidden);
-
-    const sectionIds = new Set(
-      [
-        ...plainCurrentTasks,
-        ...parentsWithChildren,
-        ...awaitingTasks,
-        ...blockedTasks,
-      ].map((t) => t.id),
-    );
-    const delegatedParentIds = new Set(delegatedParents.map((t) => t.id));
-    const mainTasks = dirtyTasks.filter(
-      (t) =>
-        !sectionIds.has(t.id) &&
-        !delegatedParentIds.has(t.id) &&
-        !nestedChildIds.has(t.id),
-    );
-
-    const currentManualEntries = manualEntries.filter((e) => e.isCurrent);
-    const mainManualEntries = manualEntries.filter((e) => !e.isCurrent);
-
-    const mainItems: ReportItem[] = [
-      ...mainManualEntries.map((entry) => ({
-        text: this.buildManualEntryReport(entry),
-      })),
-      ...delegatedParents.map((task) => ({
-        text: this.buildDelegatedParentReport(task),
-        children: (childrenByParent.get(task.externalId) ?? []).map((child) =>
-          this.buildChildTaskReport(child),
-        ),
-      })),
-      ...mainTasks.map((task) => ({ text: this.buildTaskReport(task) })),
-    ];
-
-    const currentItems: ReportItem[] = [
-      ...currentManualEntries.map((entry) => ({
-        text: this.buildManualEntryReport(entry),
-      })),
-      ...parentsWithChildren.map((task) => ({
-        text: this.buildParentWithChildrenReport(task),
-        children: (childrenByParent.get(task.externalId) ?? []).map((child) =>
-          this.buildChildTaskReport(child),
-        ),
-      })),
-      ...plainCurrentTasks.map((task) => ({
-        text: this.buildTaskReport(task),
-      })),
-    ];
-
-    const counter = { value: 1 };
-    const sections = [
-      this.buildSection(mainItems, counter),
-      this.buildSection(currentItems, counter, ReportHeader.CURRENT),
-      this.buildSection(
-        visibleAwaitingTasks.map((task) => ({
-          text: this.buildTaskReport(task),
-        })),
-        counter,
-        ReportHeader.ADDITIONAL,
-      ),
-      this.buildSection(
-        visibleBlockedTasks.map((task) => ({
-          text: this.buildTaskReport(task),
-        })),
-        counter,
-        ReportHeader.BLOCKED,
-      ),
-    ].filter(Boolean);
-
-    if (!sections.length) return null;
-
-    return [ReportHeader.TITLE, ...sections].join('\n\n');
   }
 }

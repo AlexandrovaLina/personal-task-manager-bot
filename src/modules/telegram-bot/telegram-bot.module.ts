@@ -5,6 +5,7 @@ import { TaskModule } from '../task';
 import { ScriptRunnerModule } from '../script-runner';
 import { CalendarModule } from '../calendar';
 import { ManualEntryModule } from '../manual-entry';
+import { ReportModule } from '../report';
 @Module({
   imports: [
     ConfigModule,
@@ -12,6 +13,7 @@ import { ManualEntryModule } from '../manual-entry';
     ScriptRunnerModule,
     CalendarModule,
     ManualEntryModule,
+    ReportModule,
   ],
   providers: [TelegramBotService, Logger],
   exports: [TelegramBotService],

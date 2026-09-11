@@ -6,13 +6,6 @@ export enum TaskState {
   UNDER_REVIEW = 'UNDER REVIEW',
 }
 
-export enum ReportHeader {
-  TITLE = '<b>-= Отчет по таскам=-</b>',
-  CURRENT = '<b>‼️-=Текущие задачи=-‼️</b>',
-  ADDITIONAL = '<b>-= Доп Инфа =-</b>',
-  BLOCKED = '<b>-= Инфа по заблоченным таскам =-</b>',
-}
-
 export const HIDEABLE_STATES: readonly string[] = [
   TaskState.AWAITING_CLIENT_FEEDBACK,
   TaskState.BLOCKED,

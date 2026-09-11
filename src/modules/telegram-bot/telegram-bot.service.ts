@@ -5,6 +5,7 @@ import { TaskService, TaskEntity } from '../task';
 import { ScriptRunnerService } from '../script-runner';
 import { CalendarService } from '../calendar';
 import { ManualEntryService } from '../manual-entry';
+import { ReportBuilderService } from '../report';
 import { extractError } from 'src/common/helpers';
 import {
   BotCommands,
@@ -30,6 +31,7 @@ export class TelegramBotService {
     private readonly scriptRunner: ScriptRunnerService,
     private readonly calendarService: CalendarService,
     private readonly manualEntryService: ManualEntryService,
+    private readonly reportBuilderService: ReportBuilderService,
   ) {
     this.logger = new Logger(TelegramBotService.name);
     this.bot = new TelegramBot(
@@ -304,7 +306,7 @@ export class TelegramBotService {
         return;
       }
 
-      const reply = this.taskService.buildTaskReport(task);
+      const reply = this.reportBuilderService.buildTaskReport(task);
       await this.sendHtml(chatId, reply);
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
@@ -431,7 +433,7 @@ export class TelegramBotService {
         return;
       }
 
-      const reply = this.taskService.buildManualEntryReport(entry);
+      const reply = this.reportBuilderService.buildManualEntryReport(entry);
       await this.sendHtml(chatId, reply);
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
@@ -446,7 +448,7 @@ export class TelegramBotService {
   private async reportAutoHandler(chatId: number, currentSprintOnly = false) {
     try {
       const report =
-        await this.taskService.generateAutoReport(currentSprintOnly);
+        await this.reportBuilderService.generateAutoReport(currentSprintOnly);
 
       if (!report) {
         this.bot.sendMessage(chatId, 'Нет задач с комментариями для отчёта');
