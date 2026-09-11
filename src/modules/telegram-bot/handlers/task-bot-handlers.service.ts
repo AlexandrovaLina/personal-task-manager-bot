@@ -228,7 +228,7 @@ export class TaskBotHandlers {
   public async clearNextPlannedHandler(chatId: number) {
     try {
       await this.taskService.clearNextPlannedTask();
-      this.messenger.sendMessage(chatId, 'Отметка «след. по плану» снята');
+      this.messenger.sendMessage(chatId, 'Отметка «следующая по плану» снята');
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to clear next planned task: ${message}`, stack);

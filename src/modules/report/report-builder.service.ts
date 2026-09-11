@@ -59,7 +59,7 @@ export class ReportBuilderService {
   public buildNextPlannedReport(task: TaskEntity): string {
     const title = escapeHtml(task.title);
     return (
-      `След. по плану таска:\n` +
+      `${ReportHeader.NEXT_PLANNED}\n` +
       `Таска <a href="${task.url}">WA-${task.number}: ${title}</a>\n` +
       `Статус - ${task.state}`
     );
