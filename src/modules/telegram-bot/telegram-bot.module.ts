@@ -2,7 +2,7 @@ import { Logger, Module } from '@nestjs/common';
 import { TelegramBotService } from './telegram-bot.service';
 import { ConfigModule } from '@nestjs/config';
 import { TaskModule } from '../task';
-import { ScriptRunnerModule } from '../script-runner';
+import { JiraModule } from '../jira';
 import { CalendarModule } from '../calendar';
 import { ManualEntryModule } from '../manual-entry';
 import { ReportModule } from '../report';
@@ -11,13 +11,14 @@ import {
   TaskBotHandlers,
   ManualEntryBotHandlers,
   CalendarBotHandlers,
+  JiraReportBotHandlers,
 } from './handlers';
 
 @Module({
   imports: [
     ConfigModule,
     TaskModule,
-    ScriptRunnerModule,
+    JiraModule,
     CalendarModule,
     ManualEntryModule,
     ReportModule,
@@ -29,6 +30,7 @@ import {
     TaskBotHandlers,
     ManualEntryBotHandlers,
     CalendarBotHandlers,
+    JiraReportBotHandlers,
   ],
   exports: [TelegramBotService],
 })

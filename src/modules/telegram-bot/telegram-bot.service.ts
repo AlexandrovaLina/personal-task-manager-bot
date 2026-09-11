@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as TelegramBot from 'node-telegram-bot-api';
 import { TaskService } from '../task';
-import { ScriptRunnerService } from '../script-runner';
 import { ManualEntryService } from '../manual-entry';
 import { extractError } from 'src/common/helpers';
 import {
@@ -18,9 +17,8 @@ import {
   TaskBotHandlers,
   ManualEntryBotHandlers,
   CalendarBotHandlers,
+  JiraReportBotHandlers,
 } from './handlers';
-
-const REPORT24_SCRIPT = 'report_24h.py';
 
 @Injectable()
 export class TelegramBotService {
@@ -31,11 +29,11 @@ export class TelegramBotService {
     private readonly configService: ConfigService,
     private readonly messenger: TelegramMessengerService,
     private readonly taskService: TaskService,
-    private readonly scriptRunner: ScriptRunnerService,
     private readonly manualEntryService: ManualEntryService,
     private readonly taskHandlers: TaskBotHandlers,
     private readonly manualEntryHandlers: ManualEntryBotHandlers,
     private readonly calendarHandlers: CalendarBotHandlers,
+    private readonly jiraReportHandlers: JiraReportBotHandlers,
   ) {
     this.logger = new Logger(TelegramBotService.name);
   }
@@ -170,7 +168,7 @@ export class TelegramBotService {
 
     this.bot.onText(BotCommands.REPORT24, async (msg) => {
       this.trackPrivateChat(msg);
-      await this.runJiraScript(msg.chat.id, REPORT24_SCRIPT);
+      await this.jiraReportHandlers.report24Handler(msg.chat.id);
     });
 
     this.bot.on('callback_query', async (callbackQuery) => {
@@ -206,7 +204,7 @@ export class TelegramBotService {
               await this.taskHandlers.reportAutoHandler(chatId, true);
               break;
             case 'report24':
-              await this.runJiraScript(chatId, REPORT24_SCRIPT);
+              await this.jiraReportHandlers.report24Handler(chatId);
               break;
             case 'calls':
               await this.calendarHandlers.callsHandler(chatId);
@@ -329,22 +327,6 @@ export class TelegramBotService {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to reset data: ${message}`, stack);
       this.bot.sendMessage(chatId, 'Ошибка при сбросе данных');
-    }
-  }
-
-  private async runJiraScript(
-    chatId: number,
-    scriptName: string,
-    args: string[] = [],
-  ) {
-    this.bot.sendMessage(chatId, 'Загружаю данные из Jira...');
-    try {
-      const result = await this.scriptRunner.runScript(scriptName, args);
-      await this.messenger.sendMarkdown(chatId, result || 'Пустой ответ');
-    } catch (error: unknown) {
-      const { message, stack } = extractError(error);
-      this.logger.error(`Jira script error [${scriptName}]: ${message}`, stack);
-      this.bot.sendMessage(chatId, `Ошибка при выполнении запроса: ${message}`);
     }
   }
 }
