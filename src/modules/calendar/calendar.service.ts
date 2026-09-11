@@ -3,8 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Between, DataSource, IsNull } from 'typeorm';
 import { MeetingEntity } from './meeting.entity';
 import { fetchTodayMeetings, getTodayRange, formatLocalTime } from './helpers';
-import { extractError } from 'src/common/helpers';
-import { escapeHtml } from '../telegram-bot/helpers';
+import { extractError, escapeHtml } from 'src/common/helpers';
 
 export interface SyncMeetingsResult {
   changed: MeetingEntity[];

@@ -1,1 +1,1 @@
-export * from './jira-search.interface';
+export * from './jira-search.types';

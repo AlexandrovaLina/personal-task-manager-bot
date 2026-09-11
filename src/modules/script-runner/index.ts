@@ -1,2 +1,2 @@
-export { ScriptRunnerService } from './script-runner.service';
-export { ScriptRunnerModule } from './script-runner.module';
+export * from './script-runner.service';
+export * from './script-runner.module';

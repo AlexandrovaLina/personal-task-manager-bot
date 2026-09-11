@@ -4,5 +4,6 @@ import { AppConfig } from './interfaces';
 export default registerAs('app', (): AppConfig => {
   return {
     healthUrl: process.env.HEALTH_CHECK_URL,
+    port: +(process.env.APP_PORT ?? 3000),
   };
 });

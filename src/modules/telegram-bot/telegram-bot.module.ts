@@ -1,10 +1,10 @@
 import { Logger, Module } from '@nestjs/common';
 import { TelegramBotService } from './telegram-bot.service';
 import { ConfigModule } from '@nestjs/config';
-import { TaskModule } from '../task/task.module';
+import { TaskModule } from '../task';
 import { ScriptRunnerModule } from '../script-runner';
-import { CalendarModule } from '../calendar/calendar.module';
-import { ManualEntryModule } from '../manual-entry/manual-entry.module';
+import { CalendarModule } from '../calendar';
+import { ManualEntryModule } from '../manual-entry';
 @Module({
   imports: [
     ConfigModule,

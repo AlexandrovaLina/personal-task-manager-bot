@@ -8,18 +8,10 @@ import {
   In,
   UpdateResult,
 } from 'typeorm';
-import { withTransaction, extractError } from 'src/common/helpers';
-import { JiraService } from '../jira/jira.service';
-import { JiraIssue } from '../jira/interfaces';
-import { ManualEntryService } from '../manual-entry/manual-entry.service';
-import { ManualEntryEntity } from '../manual-entry/manual-entry.entity';
-import {
-  TaskState,
-  ReportHeader,
-  HIDEABLE_STATES,
-  SUBTASK_REVIEW_STATE,
-} from './constants';
-import { escapeHtml } from '../telegram-bot/helpers';
+import { withTransaction, extractError, escapeHtml } from 'src/common/helpers';
+import { JiraService, JiraIssue } from '../jira';
+import { ManualEntryService, ManualEntryEntity } from '../manual-entry';
+import { TaskState, ReportHeader, HIDEABLE_STATES } from './constants';
 
 interface ReportItem {
   text: string;
@@ -323,7 +315,7 @@ export class TaskService {
 
     const hasReviewChild = (externalId: string): boolean =>
       (childrenByParent.get(externalId) ?? []).some(
-        (child) => child.state === SUBTASK_REVIEW_STATE,
+        (child) => child.state === TaskState.UNDER_REVIEW,
       );
 
     const plainCurrentTasks = currentTaskCandidates.filter(

@@ -1,1 +1,1 @@
-export { entitiesToHtml, escapeHtml } from './entities-to-markdown.helper';
+export * from './telegram-entities.helper';

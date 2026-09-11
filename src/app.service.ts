@@ -3,8 +3,8 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '@nestjs/config';
-import { TaskService } from './modules/task/task.service';
-import { CalendarService } from './modules/calendar/calendar.service';
+import { TaskService } from './modules/task';
+import { CalendarService } from './modules/calendar';
 import { TelegramBotService } from './modules/telegram-bot';
 import { extractError } from './common/helpers';
 

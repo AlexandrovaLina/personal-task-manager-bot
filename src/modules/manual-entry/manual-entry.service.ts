@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ManualEntryEntity } from './manual-entry.entity';
-import { JiraService } from '../jira/jira.service';
+import { JiraService } from '../jira';
 import { extractError } from 'src/common/helpers';
 
 @Injectable()

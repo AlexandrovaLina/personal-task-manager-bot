@@ -1,10 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as TelegramBot from 'node-telegram-bot-api';
-import { TaskService } from '../task/task.service';
+import { TaskService, TaskEntity } from '../task';
 import { ScriptRunnerService } from '../script-runner';
-import { CalendarService } from '../calendar/calendar.service';
-import { ManualEntryService } from '../manual-entry/manual-entry.service';
+import { CalendarService } from '../calendar';
+import { ManualEntryService } from '../manual-entry';
 import { extractError } from 'src/common/helpers';
 import {
   BotCommands,
@@ -14,7 +14,6 @@ import {
   SEPARATOR_REGEX,
   UPDATE_TASK_COMMENTS_REGEX,
 } from './constants';
-import { TaskEntity } from '../task/task.entity';
 import { entitiesToHtml } from './helpers';
 
 const REPORT24_SCRIPT = 'report_24h.py';

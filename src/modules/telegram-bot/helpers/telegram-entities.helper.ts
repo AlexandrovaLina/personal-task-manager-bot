@@ -1,4 +1,5 @@
 import * as TelegramBot from 'node-telegram-bot-api';
+import { escapeHtml } from 'src/common/helpers';
 
 type EntityType =
   | TelegramBot.MessageEntity['type']
@@ -16,13 +17,6 @@ const WRAP_MAP: Partial<Record<EntityType, [string, string]>> = {
   blockquote: ['<blockquote>', '</blockquote>'],
   expandable_blockquote: ['<blockquote expandable>', '</blockquote>'],
 };
-
-export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
 
 interface TagInsertion {
   pos: number;
