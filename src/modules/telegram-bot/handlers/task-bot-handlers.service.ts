@@ -4,7 +4,7 @@ import { extractError } from 'src/common/helpers';
 import { TaskService, TaskEntity } from '../../task';
 import { ReportBuilderService } from '../../report';
 import { TelegramMessengerService } from '../telegram-messenger.service';
-import { UPDATE_TASK_COMMENTS_REGEX } from '../constants';
+import { UPDATE_TASK_COMMENTS_REGEX, NEXT_PLANNED_REGEX } from '../constants';
 import { entitiesToHtml } from '../helpers';
 
 const RECENT_SYNC_WINDOW_DAYS = 4;
@@ -197,6 +197,43 @@ export class TaskBotHandlers {
         },
       ]),
     };
+  }
+
+  public async nextPlannedHandler(msg: TelegramBot.Message, chatId: number) {
+    try {
+      const match = msg.text.match(NEXT_PLANNED_REGEX);
+      const taskNumber = match ? +match[1] : NaN;
+
+      const task = await this.taskService.getTaskByKey(taskNumber);
+      if (!task?.id) {
+        this.messenger.sendMessage(
+          chatId,
+          `❗️❗️❗️ Таска с таким номером не найдена ❗️❗️❗️`,
+        );
+        return;
+      }
+
+      await this.taskService.setNextPlannedTask(task.id);
+      this.messenger.sendMessage(
+        chatId,
+        `WA-${task.number} отмечена как следующая по плану`,
+      );
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(`Failed to set next planned task: ${message}`, stack);
+      this.messenger.sendMessage(chatId, 'Ошибка при отметке задачи');
+    }
+  }
+
+  public async clearNextPlannedHandler(chatId: number) {
+    try {
+      await this.taskService.clearNextPlannedTask();
+      this.messenger.sendMessage(chatId, 'Отметка «след. по плану» снята');
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(`Failed to clear next planned task: ${message}`, stack);
+      this.messenger.sendMessage(chatId, 'Ошибка при снятии отметки');
+    }
   }
 
   public async syncFullTaskHandler(chatId: number) {

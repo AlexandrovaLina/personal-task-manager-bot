@@ -33,4 +33,7 @@ export class TaskEntity extends BaseEntity {
 
   @Column({ type: 'text', nullable: true })
   public parentExternalId?: string | null;
+
+  @Column({ type: 'boolean', default: false })
+  public isNextPlanned: boolean;
 }

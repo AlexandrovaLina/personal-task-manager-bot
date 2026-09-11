@@ -56,6 +56,15 @@ export class ReportBuilderService {
     return `↳ ${this.buildTaskReport(task)}`;
   }
 
+  public buildNextPlannedReport(task: TaskEntity): string {
+    const title = escapeHtml(task.title);
+    return (
+      `След. по плану таска:\n` +
+      `Таска <a href="${task.url}">WA-${task.number}: ${title}</a>\n` +
+      `Статус - ${task.state}`
+    );
+  }
+
   private buildSection(
     items: ReportItem[],
     counter: { value: number },
@@ -249,10 +258,25 @@ export class ReportBuilderService {
       })),
     ];
 
+    const nextPlannedTask = await this.taskService.getNextPlannedTask();
+
     const counter = { value: 1 };
+    const mainSection = this.buildSection(mainItems, counter);
+
+    const currentBody = this.buildSection(currentItems, counter);
+    const nextPlannedBlock = nextPlannedTask
+      ? this.buildNextPlannedReport(nextPlannedTask)
+      : null;
+    const currentSectionParts = [currentBody, nextPlannedBlock].filter(
+      Boolean,
+    ) as string[];
+    const currentSection = currentSectionParts.length
+      ? `${ReportHeader.CURRENT}\n\n${currentSectionParts.join('\n\n')}`
+      : null;
+
     const sections = [
-      this.buildSection(mainItems, counter),
-      this.buildSection(currentItems, counter, ReportHeader.CURRENT),
+      mainSection,
+      currentSection,
       this.buildSection(
         visibleAwaitingTasks.map((task) => ({
           text: this.buildTaskReport(task),

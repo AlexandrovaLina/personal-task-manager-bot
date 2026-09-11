@@ -11,6 +11,8 @@ import {
   MANUAL_ENTRY_KEY_REGEX,
   SEPARATOR_REGEX,
   UPDATE_TASK_COMMENTS_REGEX,
+  NEXT_PLANNED_REGEX,
+  NEXT_PLANNED_CLEAR_REGEX,
 } from './constants';
 import { TelegramMessengerService } from './telegram-messenger.service';
 import {
@@ -72,6 +74,14 @@ export class TelegramBotService {
       {
         command: 'chats',
         description: 'Список чатов бота (переименование, разрешение писать)',
+      },
+      {
+        command: 'next',
+        description: 'Отметить задачу как "след. по плану" (/next <номер>)',
+      },
+      {
+        command: 'next_clear',
+        description: 'Снять отметку "след. по плану"',
       },
     ]);
 
@@ -183,6 +193,16 @@ export class TelegramBotService {
       await this.chatHandlers.listChatsHandler(msg.chat.id);
     });
 
+    this.bot.onText(NEXT_PLANNED_REGEX, async (msg) => {
+      this.trackPrivateChat(msg);
+      await this.taskHandlers.nextPlannedHandler(msg, msg.chat.id);
+    });
+
+    this.bot.onText(NEXT_PLANNED_CLEAR_REGEX, async (msg) => {
+      this.trackPrivateChat(msg);
+      await this.taskHandlers.clearNextPlannedHandler(msg.chat.id);
+    });
+
     this.bot.on('callback_query', async (callbackQuery) => {
       const message = callbackQuery.message;
       const chatId = message.chat.id;
@@ -199,9 +219,11 @@ export class TelegramBotService {
 /hidden - видимость заблокированных/ожидающих задач в автоотчёте
 /sync_full - полная синхронизация из Jira (автоотчёты синхронизируют недавние обновления сами)
 /chats - список чатов бота (переименование, разрешение писать)
+/next <номер> - отметить задачу как "след. по плану"
+/next_clear - снять отметку "след. по плану"
 
 Обновить комментарий: <номер>: <текст>
-/reset или ---- - сбросить данные, начать новый период`,
+/reset или —— - сбросить данные, начать новый период`,
           );
           return;
         }
@@ -359,12 +381,14 @@ export class TelegramBotService {
       const manualEntries = await this.manualEntryService.getAllEntries();
 
       if (!dirtyTasks.length && !manualEntries.length) {
+        await this.taskService.clearNextPlannedTask();
         this.messenger.sendMessage(chatId, 'Нет данных для сброса');
         return;
       }
 
       await this.taskService.resetDirtyFlags();
       await this.manualEntryService.resetEntries();
+      await this.taskService.clearNextPlannedTask();
 
       const totalCount = dirtyTasks.length + manualEntries.length;
       this.messenger.sendMessage(

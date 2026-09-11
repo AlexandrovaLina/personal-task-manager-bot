@@ -221,6 +221,34 @@ export class TaskService {
     return this.update(id, { isHidden });
   }
 
+  public async getNextPlannedTask(): Promise<TaskEntity | null> {
+    const taskRepository = this.datasource.getRepository(TaskEntity);
+
+    return taskRepository.findOneBy({
+      isNextPlanned: true,
+      deletedAt: IsNull(),
+    });
+  }
+
+  public async setNextPlannedTask(id: string): Promise<void> {
+    const taskRepository = this.datasource.getRepository(TaskEntity);
+
+    await taskRepository.update(
+      { isNextPlanned: true },
+      { isNextPlanned: false },
+    );
+    await taskRepository.update({ id }, { isNextPlanned: true });
+  }
+
+  public async clearNextPlannedTask(): Promise<void> {
+    const taskRepository = this.datasource.getRepository(TaskEntity);
+
+    await taskRepository.update(
+      { isNextPlanned: true },
+      { isNextPlanned: false },
+    );
+  }
+
   private resolveIsHidden(state: string, existing?: TaskEntity): boolean {
     if (!HIDEABLE_STATES.includes(state)) return false;
 
