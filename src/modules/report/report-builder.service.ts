@@ -147,18 +147,24 @@ export class ReportBuilderService {
         (child) => child.state === TaskState.UNDER_REVIEW,
       );
 
-    const plainCurrentTasks = currentTaskCandidates.filter(
-      (t) => !childrenByParent.has(t.externalId),
+    const nestedChildIds = new Set(
+      [...childrenByParent.values()].flat().map((t) => t.id),
     );
-    const delegatedParents = currentTaskCandidates.filter((t) =>
-      hasReviewChild(t.externalId),
+
+    // A current-task-candidate that is itself already rendered as someone
+    // else's nested child (e.g. its own status also happens to be current)
+    // must not also be rendered again as a top-level item.
+    const plainCurrentTasks = currentTaskCandidates.filter(
+      (t) => !childrenByParent.has(t.externalId) && !nestedChildIds.has(t.id),
+    );
+    const delegatedParents = currentTaskCandidates.filter(
+      (t) => hasReviewChild(t.externalId) && !nestedChildIds.has(t.id),
     );
     const parentsWithChildren = currentTaskCandidates.filter(
       (t) =>
-        childrenByParent.has(t.externalId) && !hasReviewChild(t.externalId),
-    );
-    const nestedChildIds = new Set(
-      [...childrenByParent.values()].flat().map((t) => t.id),
+        childrenByParent.has(t.externalId) &&
+        !hasReviewChild(t.externalId) &&
+        !nestedChildIds.has(t.id),
     );
 
     const visibleAwaitingTasks = awaitingTasks.filter((t) => !t.isHidden);
