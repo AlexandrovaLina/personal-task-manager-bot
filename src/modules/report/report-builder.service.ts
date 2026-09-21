@@ -39,6 +39,10 @@ export class ReportBuilderService {
     return `<a href="${entry.url}"><b>${entry.key}</b>: ${title}</a>\n<b>Комментарии</b> - ${entry.comment}`;
   }
 
+  private buildCommentLine(task: TaskEntity): string {
+    return task.comments ? `\n<b>Комментарии</b> - ${task.comments}` : '';
+  }
+
   public buildDelegatedParentReport(
     task: TaskEntity,
     childrenCount: number,
@@ -46,7 +50,7 @@ export class ReportBuilderService {
     const subtaskWord = childrenCount === 1 ? 'подзадачи' : 'подзадач';
     return (
       `⏳ ${this.buildTaskLink(task)}\n` +
-      `${this.buildStatusLine(task.state)}\n` +
+      `${this.buildStatusLine(task.state)}${this.buildCommentLine(task)}\n` +
       `Ожидает ревью ${subtaskWord}:`
     );
   }
@@ -54,7 +58,7 @@ export class ReportBuilderService {
   public buildParentWithChildrenReport(task: TaskEntity): string {
     return (
       `${this.buildTaskLink(task)}\n` +
-      `${this.buildStatusLine(task.state)}\n` +
+      `${this.buildStatusLine(task.state)}${this.buildCommentLine(task)}\n` +
       `Это родительская таска для:`
     );
   }
@@ -167,6 +171,14 @@ export class ReportBuilderService {
         !nestedChildIds.has(t.id),
     );
 
+    const dirtyTaskIds = new Set(dirtyTasks.map((t) => t.id));
+    const dirtyParentsWithChildren = parentsWithChildren.filter((t) =>
+      dirtyTaskIds.has(t.id),
+    );
+    const plainParentsWithChildren = parentsWithChildren.filter(
+      (t) => !dirtyTaskIds.has(t.id),
+    );
+
     const visibleAwaitingTasks = awaitingTasks.filter((t) => !t.isHidden);
     const visibleBlockedTasks = blockedTasks.filter((t) => !t.isHidden);
 
@@ -246,6 +258,12 @@ export class ReportBuilderService {
         text: this.buildParentWithChildrenReport(parent),
         children: children.map((child) => this.buildChildTaskReport(child)),
       })),
+      ...dirtyParentsWithChildren.map((task) => ({
+        text: this.buildParentWithChildrenReport(task),
+        children: (childrenByParent.get(task.externalId) ?? []).map((child) =>
+          this.buildChildTaskReport(child),
+        ),
+      })),
       ...plainMainTasks.map((task) => ({ text: this.buildTaskReport(task) })),
     ];
 
@@ -253,7 +271,7 @@ export class ReportBuilderService {
       ...currentManualEntries.map((entry) => ({
         text: this.buildManualEntryReport(entry),
       })),
-      ...parentsWithChildren.map((task) => ({
+      ...plainParentsWithChildren.map((task) => ({
         text: this.buildParentWithChildrenReport(task),
         children: (childrenByParent.get(task.externalId) ?? []).map((child) =>
           this.buildChildTaskReport(child),
