@@ -66,16 +66,23 @@ export class TaskBotHandlers {
       const taskNumber = match[1];
       const rawComment = match[2]?.trim();
 
-      if (!rawComment) {
-        this.messenger.sendMessage(chatId, 'Комментарий не может быть пустым');
-        return;
-      }
-
       const task = await this.taskService.getTaskByKey(+taskNumber);
       if (!task?.id) {
         this.messenger.sendMessage(
           chatId,
           `❗️❗️❗️ Таска с таким номером не найдена ❗️❗️❗️`,
+        );
+        return;
+      }
+
+      if (!rawComment) {
+        await this.taskService.update(task.id, {
+          comments: null,
+          isCommentDirty: false,
+        });
+        this.messenger.sendMessage(
+          chatId,
+          `Комментарий к таске с номером ${taskNumber} очищен`,
         );
         return;
       }

@@ -40,9 +40,7 @@ export class ReportBuilderService {
   }
 
   private buildCommentLine(task: TaskEntity): string {
-    return task.isCommentDirty && task.comments
-      ? `\n<b>Комментарии</b> - ${task.comments}`
-      : '';
+    return task.comments ? `\n<b>Комментарии</b> - ${task.comments}` : '';
   }
 
   public buildDelegatedParentReport(
