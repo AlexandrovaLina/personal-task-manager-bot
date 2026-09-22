@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { escapeHtml, extractError } from 'src/common/helpers';
-import { TaskService, TaskEntity, TaskState, DONE_STATES } from '../task';
+import {
+  TaskService,
+  TaskEntity,
+  TaskState,
+  DONE_STATES,
+  NOT_STARTED_STATES,
+} from '../task';
 import { ManualEntryService, ManualEntryEntity } from '../manual-entry';
 import { ReportHeader, STATUS_EMOJI, DEFAULT_STATUS_EMOJI } from './constants';
 
@@ -151,6 +157,13 @@ export class ReportBuilderService {
         (child) => child.state === TaskState.UNDER_REVIEW,
       );
 
+    // Hide untouched subtasks (no comment, still in an unstarted state) from
+    // a parent's grouping — they add noise without signalling any activity.
+    const isChildRenderable = (child: TaskEntity): boolean =>
+      Boolean(child.comments) || !NOT_STARTED_STATES.includes(child.state);
+    const getRenderableChildren = (externalId: string): TaskEntity[] =>
+      (childrenByParent.get(externalId) ?? []).filter(isChildRenderable);
+
     const nestedChildIds = new Set(
       [...childrenByParent.values()].flat().map((t) => t.id),
     );
@@ -256,7 +269,7 @@ export class ReportBuilderService {
         text: this.buildManualEntryReport(entry),
       })),
       ...delegatedParents.map((task) => {
-        const children = childrenByParent.get(task.externalId) ?? [];
+        const children = getRenderableChildren(task.externalId);
         return {
           text: this.buildDelegatedParentReport(task, children.length),
           children: children.map((child) => this.buildChildTaskReport(child)),
@@ -268,7 +281,7 @@ export class ReportBuilderService {
       })),
       ...mainParentsWithChildren.map((task) => ({
         text: this.buildParentWithChildrenReport(task),
-        children: (childrenByParent.get(task.externalId) ?? []).map((child) =>
+        children: getRenderableChildren(task.externalId).map((child) =>
           this.buildChildTaskReport(child),
         ),
       })),
@@ -281,7 +294,7 @@ export class ReportBuilderService {
       })),
       ...plainParentsWithChildren.map((task) => ({
         text: this.buildParentWithChildrenReport(task),
-        children: (childrenByParent.get(task.externalId) ?? []).map((child) =>
+        children: getRenderableChildren(task.externalId).map((child) =>
           this.buildChildTaskReport(child),
         ),
       })),

@@ -19,3 +19,8 @@ export const DONE_STATES: readonly string[] = [
   'Released',
   'Canceled',
 ];
+
+// Statuses meaning "nobody has touched this subtask yet" — used to hide
+// untouched children from a parent's report grouping when they also have
+// no comment.
+export const NOT_STARTED_STATES: readonly string[] = ['To Do', 'Backlog'];
