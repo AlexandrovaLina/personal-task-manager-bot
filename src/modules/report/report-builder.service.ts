@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { escapeHtml, extractError } from 'src/common/helpers';
-import { TaskService, TaskEntity, TaskState } from '../task';
+import { TaskService, TaskEntity, TaskState, DONE_STATES } from '../task';
 import { ManualEntryService, ManualEntryEntity } from '../manual-entry';
 import { ReportHeader, STATUS_EMOJI, DEFAULT_STATUS_EMOJI } from './constants';
 
@@ -173,12 +173,20 @@ export class ReportBuilderService {
         !nestedChildIds.has(t.id),
     );
 
+    const allChildrenDone = (externalId: string): boolean => {
+      const children = childrenByParent.get(externalId) ?? [];
+      return (
+        children.length > 0 &&
+        children.every((child) => DONE_STATES.includes(child.state))
+      );
+    };
+
     const dirtyTaskIds = new Set(dirtyTasks.map((t) => t.id));
-    const dirtyParentsWithChildren = parentsWithChildren.filter((t) =>
-      dirtyTaskIds.has(t.id),
+    const mainParentsWithChildren = parentsWithChildren.filter(
+      (t) => dirtyTaskIds.has(t.id) || allChildrenDone(t.externalId),
     );
     const plainParentsWithChildren = parentsWithChildren.filter(
-      (t) => !dirtyTaskIds.has(t.id),
+      (t) => !dirtyTaskIds.has(t.id) && !allChildrenDone(t.externalId),
     );
 
     const visibleAwaitingTasks = awaitingTasks.filter((t) => !t.isHidden);
@@ -260,7 +268,7 @@ export class ReportBuilderService {
         text: this.buildParentWithChildrenReport(parent),
         children: children.map((child) => this.buildChildTaskReport(child)),
       })),
-      ...dirtyParentsWithChildren.map((task) => ({
+      ...mainParentsWithChildren.map((task) => ({
         text: this.buildParentWithChildrenReport(task),
         children: (childrenByParent.get(task.externalId) ?? []).map((child) =>
           this.buildChildTaskReport(child),
