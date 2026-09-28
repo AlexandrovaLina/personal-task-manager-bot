@@ -176,14 +176,19 @@ export class ReportBuilderService {
       [...childrenByParent.values()].flat().map((t) => t.id),
     );
 
-    // True only when every renderable child is under review — a mix of
-    // review + still-active children (e.g. one In Progress) shouldn't claim
-    // to be "awaiting review" as a whole.
+    // True when at least one child is under review and none of the rest are
+    // still genuinely active work — a Done-category sibling doesn't count as
+    // "active", so (review + already-finished) still reads as pure review,
+    // but (review + In Progress) does not.
     const isPureReview = (externalId: string): boolean => {
       const children = getRenderableChildren(externalId);
       return (
-        children.length > 0 &&
-        children.every((child) => child.state === TaskState.UNDER_REVIEW)
+        children.some((child) => child.state === TaskState.UNDER_REVIEW) &&
+        children.every(
+          (child) =>
+            child.state === TaskState.UNDER_REVIEW ||
+            DONE_STATES.includes(child.state),
+        )
       );
     };
 
