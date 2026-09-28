@@ -69,6 +69,14 @@ export class ReportBuilderService {
     );
   }
 
+  public buildMixedChildrenReport(task: TaskEntity): string {
+    return (
+      `${this.buildTaskLink(task)}\n` +
+      `${this.buildStatusLine(task.state)}${this.buildCommentLine(task)}\n` +
+      `Статус по подзадачам:`
+    );
+  }
+
   public buildChildTaskReport(task: TaskEntity): string {
     return `<blockquote>${this.buildTaskReport(task)}</blockquote>`;
   }
@@ -168,6 +176,17 @@ export class ReportBuilderService {
       [...childrenByParent.values()].flat().map((t) => t.id),
     );
 
+    // True only when every renderable child is under review — a mix of
+    // review + still-active children (e.g. one In Progress) shouldn't claim
+    // to be "awaiting review" as a whole.
+    const isPureReview = (externalId: string): boolean => {
+      const children = getRenderableChildren(externalId);
+      return (
+        children.length > 0 &&
+        children.every((child) => child.state === TaskState.UNDER_REVIEW)
+      );
+    };
+
     // A current-task-candidate that is itself already rendered as someone
     // else's nested child (e.g. its own status also happens to be current)
     // must not also be rendered again as a top-level item.
@@ -175,7 +194,16 @@ export class ReportBuilderService {
       (t) => !childrenByParent.has(t.externalId) && !nestedChildIds.has(t.id),
     );
     const delegatedParents = currentTaskCandidates.filter(
-      (t) => hasReviewChild(t.externalId) && !nestedChildIds.has(t.id),
+      (t) =>
+        hasReviewChild(t.externalId) &&
+        isPureReview(t.externalId) &&
+        !nestedChildIds.has(t.id),
+    );
+    const mixedReviewParents = currentTaskCandidates.filter(
+      (t) =>
+        hasReviewChild(t.externalId) &&
+        !isPureReview(t.externalId) &&
+        !nestedChildIds.has(t.id),
     );
     const parentsWithChildren = currentTaskCandidates.filter(
       (t) =>
@@ -200,6 +228,13 @@ export class ReportBuilderService {
       (t) => !dirtyTaskIds.has(t.id) && !allChildrenDone(t.externalId),
     );
 
+    const mainMixedReviewParents = mixedReviewParents.filter((t) =>
+      dirtyTaskIds.has(t.id),
+    );
+    const plainMixedReviewParents = mixedReviewParents.filter(
+      (t) => !dirtyTaskIds.has(t.id),
+    );
+
     const visibleAwaitingTasks = awaitingTasks.filter((t) => !t.isHidden);
     const visibleBlockedTasks = blockedTasks.filter((t) => !t.isHidden);
 
@@ -207,6 +242,7 @@ export class ReportBuilderService {
       [
         ...plainCurrentTasks,
         ...parentsWithChildren,
+        ...mixedReviewParents,
         ...awaitingTasks,
         ...blockedTasks,
       ].map((t) => t.id),
@@ -285,12 +321,24 @@ export class ReportBuilderService {
           this.buildChildTaskReport(child),
         ),
       })),
+      ...mainMixedReviewParents.map((task) => ({
+        text: this.buildMixedChildrenReport(task),
+        children: getRenderableChildren(task.externalId).map((child) =>
+          this.buildChildTaskReport(child),
+        ),
+      })),
       ...plainMainTasks.map((task) => ({ text: this.buildTaskReport(task) })),
     ];
 
     const currentItems: ReportItem[] = [
       ...currentManualEntries.map((entry) => ({
         text: this.buildManualEntryReport(entry),
+      })),
+      ...plainMixedReviewParents.map((task) => ({
+        text: this.buildMixedChildrenReport(task),
+        children: getRenderableChildren(task.externalId).map((child) =>
+          this.buildChildTaskReport(child),
+        ),
       })),
       ...plainParentsWithChildren.map((task) => ({
         text: this.buildParentWithChildrenReport(task),
