@@ -36,4 +36,7 @@ export class TaskEntity extends BaseEntity {
 
   @Column({ type: 'boolean', default: false })
   public isNextPlanned: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  public isOnCxlBoard: boolean;
 }

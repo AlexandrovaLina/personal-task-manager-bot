@@ -109,6 +109,7 @@ export class ReportBuilderService {
 
   public async generateAutoReport(
     currentSprintOnly = false,
+    onBoardOnly = false,
   ): Promise<string | null> {
     let dirtyTasks: TaskEntity[],
       inProgressTasks: TaskEntity[],
@@ -124,16 +125,22 @@ export class ReportBuilderService {
         blockedTasks,
         manualEntries,
       ] = await Promise.all([
-        this.taskService.getDirtyTasks(),
+        this.taskService.getDirtyTasks(false, onBoardOnly),
         this.taskService.getTasksByState(
           TaskState.IN_PROGRESS,
           currentSprintOnly,
+          onBoardOnly,
         ),
         this.taskService.getTasksByState(
           TaskState.AWAITING_CLIENT_FEEDBACK,
           currentSprintOnly,
+          onBoardOnly,
         ),
-        this.taskService.getTasksByState(TaskState.BLOCKED, currentSprintOnly),
+        this.taskService.getTasksByState(
+          TaskState.BLOCKED,
+          currentSprintOnly,
+          onBoardOnly,
+        ),
         this.manualEntryService.getAllEntries(),
       ]);
     } catch (error: unknown) {

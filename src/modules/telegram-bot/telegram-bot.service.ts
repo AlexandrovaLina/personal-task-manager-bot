@@ -60,6 +60,10 @@ export class TelegramBotService {
         command: 'report_auto_sprint',
         description: 'Автоотчет по задачам текущего спринта',
       },
+      {
+        command: 'report_auto_new',
+        description: 'Автоотчет по задачам с CXL Kanban board',
+      },
       { command: 'reset', description: 'Сбросить данные, начать новый период' },
       { command: 'report24', description: 'Отчёт за 24ч из Jira' },
       { command: 'calls', description: 'Созвоны на сегодня' },
@@ -93,6 +97,12 @@ export class TelegramBotService {
             {
               text: '📊 Автоотчёт (спринт)',
               callback_data: 'menu_report_auto_sprint',
+            },
+          ],
+          [
+            {
+              text: '📊 Автоотчёт (CXL board)',
+              callback_data: 'menu_report_auto_new',
             },
           ],
           [{ text: '📋 Отчёт за 24ч', callback_data: 'menu_report24' }],
@@ -163,6 +173,11 @@ export class TelegramBotService {
       await this.taskHandlers.reportAutoHandler(msg.chat.id, true);
     });
 
+    this.bot.onText(BotCommands.REPORT_AUTO_NEW, async (msg) => {
+      this.trackPrivateChat(msg);
+      await this.taskHandlers.reportAutoBoardHandler(msg.chat.id);
+    });
+
     this.bot.onText(BotCommands.RESET, async (msg) => {
       this.trackPrivateChat(msg);
       await this.separatorHandler(msg);
@@ -213,6 +228,7 @@ export class TelegramBotService {
             `Доступные команды:
 /report_auto - автоотчет по задачам с комментариями
 /report_auto_sprint - автоотчет по задачам текущего спринта
+/report_auto_new - автоотчет по задачам с CXL Kanban board
 /report24 - отчёт за 24ч из Jira
 /calls - созвоны на сегодня
 /sync_calls - синхронизация созвонов из календаря
@@ -238,6 +254,9 @@ export class TelegramBotService {
               break;
             case 'report_auto_sprint':
               await this.taskHandlers.reportAutoHandler(chatId, true);
+              break;
+            case 'report_auto_new':
+              await this.taskHandlers.reportAutoBoardHandler(chatId);
               break;
             case 'report24':
               await this.jiraReportHandlers.report24Handler(chatId);

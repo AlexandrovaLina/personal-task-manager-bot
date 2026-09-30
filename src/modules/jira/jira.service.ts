@@ -5,6 +5,17 @@ import { ConfigService } from '@nestjs/config';
 import { extractError } from 'src/common/helpers';
 import { JiraIssue, JiraSearchResponse } from './interfaces';
 
+// Board this user's team now works off of instead of sprints (WA project's
+// workflow moved to a Kanban board) — see JiraService.getBoardIssueExternalIds.
+const CXL_BOARD_ID = 1395;
+
+interface BoardIssuesResponse {
+  issues: { id: string }[];
+  total: number;
+  startAt: number;
+  maxResults: number;
+}
+
 @Injectable()
 export class JiraService {
   constructor(
@@ -16,6 +27,7 @@ export class JiraService {
   }
 
   private readonly baseUrl = this.configService.get<string>(`jira.baseUrl`);
+  private readonly siteUrl = this.configService.get<string>(`jira.siteUrl`);
   private readonly authToken = this.configService.get<string>(`jira.authToken`);
   private readonly projectKey =
     this.configService.get<string>(`jira.projectKey`);
@@ -82,6 +94,54 @@ export class JiraService {
       const { message, stack } = extractError(error);
       this.logger.error(`Error fetching tasks from Jira: ${message}`, stack);
       throw new Error('Could not fetch tasks from Jira');
+    }
+  }
+
+  /**
+   * External IDs of this user's currently-assigned issues that are also on
+   * the CXL Kanban board — the WA project moved from sprints to this board,
+   * so board membership is now the "is this actually current work" signal.
+   */
+  public async getBoardIssueExternalIds(): Promise<Set<string>> {
+    try {
+      const url = `${this.siteUrl}/rest/agile/1.0/board/${CXL_BOARD_ID}/issue`;
+      const headers = {
+        Authorization: `Basic ${this.authToken}`,
+        Accept: 'application/json',
+      };
+
+      const externalIds = new Set<string>();
+      let startAt = 0;
+      let total = Infinity;
+      let pageCount = 0;
+
+      while (startAt < total && pageCount < this.maxPages) {
+        const response = await firstValueFrom(
+          this.httpService.get<BoardIssuesResponse>(url, {
+            headers,
+            params: {
+              jql: 'assignee = currentUser()',
+              fields: 'id',
+              maxResults: this.maxResults,
+              startAt,
+            },
+          }),
+        );
+
+        for (const issue of response.data.issues) externalIds.add(issue.id);
+        total = response.data.total;
+        startAt += response.data.issues.length || this.maxResults;
+        pageCount++;
+      }
+
+      return externalIds;
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(
+        `Error fetching CXL board issues from Jira: ${message}`,
+        stack,
+      );
+      return new Set();
     }
   }
 

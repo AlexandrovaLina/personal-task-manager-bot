@@ -137,6 +137,45 @@ export class TaskBotHandlers {
     }
   }
 
+  /**
+   * Same as reportAutoHandler, but scoped to the CXL Kanban board instead of
+   * "current sprint" — the WA project moved to a board-based (sprint-less)
+   * workflow, so "current" now means "on that board" rather than in a sprint.
+   */
+  public async reportAutoBoardHandler(chatId: number) {
+    try {
+      try {
+        await this.taskService.syncTaskData(RECENT_SYNC_WINDOW_DAYS);
+      } catch (syncError: unknown) {
+        const { message, stack } = extractError(syncError);
+        this.logger.error(`Auto-sync before report failed: ${message}`, stack);
+        this.messenger.sendMessage(
+          chatId,
+          '⚠️ Не удалось синхронизировать недавние обновления из Jira — отчёт построен по текущим данным в БД',
+        );
+      }
+
+      const report = await this.reportBuilderService.generateAutoReport(
+        false,
+        true,
+      );
+
+      if (!report) {
+        this.messenger.sendMessage(
+          chatId,
+          'Нет задач с комментариями для отчёта',
+        );
+        return;
+      }
+
+      await this.messenger.sendHtml(chatId, report);
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(`Failed to generate auto report: ${message}`, stack);
+      this.messenger.sendMessage(chatId, 'Ошибка при генерации автоотчёта');
+    }
+  }
+
   public async hiddenHandler(chatId: number) {
     try {
       const keyboard = await this.buildHiddenKeyboard();

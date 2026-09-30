@@ -71,7 +71,10 @@ export class TaskService {
    */
   public async syncTaskData(updatedWithinDays?: number): Promise<void> {
     try {
-      const data = await this.jiraService.getTasks(updatedWithinDays);
+      const [data, boardExternalIds] = await Promise.all([
+        this.jiraService.getTasks(updatedWithinDays),
+        this.jiraService.getBoardIssueExternalIds(),
+      ]);
 
       if (!data?.issues) {
         this.logger.error('Jira returned invalid response: missing issues');
@@ -111,6 +114,7 @@ export class TaskService {
               state,
               existingByExternalId.get(issue.id),
             ),
+            isOnCxlBoard: boardExternalIds.has(issue.id),
           };
         },
       );
@@ -143,7 +147,10 @@ export class TaskService {
     return task;
   }
 
-  public async getDirtyTasks(currentSprintOnly = false): Promise<TaskEntity[]> {
+  public async getDirtyTasks(
+    currentSprintOnly = false,
+    onBoardOnly = false,
+  ): Promise<TaskEntity[]> {
     const taskRepository = this.datasource.getRepository(TaskEntity);
 
     return taskRepository.find({
@@ -151,6 +158,7 @@ export class TaskService {
         isCommentDirty: true,
         deletedAt: IsNull(),
         ...(currentSprintOnly ? { isCurrentSprint: true } : {}),
+        ...(onBoardOnly ? { isOnCxlBoard: true } : {}),
       },
       order: { number: 'DESC' },
     });
@@ -168,6 +176,7 @@ export class TaskService {
   public async getTasksByState(
     state: string,
     currentSprintOnly = false,
+    onBoardOnly = false,
   ): Promise<TaskEntity[]> {
     const taskRepository = this.datasource.getRepository(TaskEntity);
 
@@ -176,6 +185,7 @@ export class TaskService {
         state,
         deletedAt: IsNull(),
         ...(currentSprintOnly ? { isCurrentSprint: true } : {}),
+        ...(onBoardOnly ? { isOnCxlBoard: true } : {}),
       },
       order: { number: 'DESC' },
     });
