@@ -62,7 +62,7 @@ export class AppService {
         meetings,
         'Доброе утро, созвоны сегодня:',
       );
-      await this.telegramBotService.sendOwnerMessage(digest);
+      await this.telegramBotService.broadcastMessage(digest);
       this.logger.debug('[MEETINGS DIGEST JOB]: Sent successfully');
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
@@ -87,7 +87,7 @@ export class AppService {
         '⚠️ Изменения в расписании созвонов на сегодня:',
         rescheduled,
       );
-      await this.telegramBotService.sendOwnerMessage(digest);
+      await this.telegramBotService.broadcastMessage(digest);
       this.logger.debug(
         `[MEETINGS SYNC JOB]: ${changed.length} changed, ${cancelled.length} cancelled`,
       );

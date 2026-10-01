@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import * as TelegramBot from 'node-telegram-bot-api';
 import { TaskService } from '../task';
 import { ManualEntryService } from '../manual-entry';
@@ -15,6 +14,7 @@ import {
   NEXT_PLANNED_CLEAR_REGEX,
 } from './constants';
 import { TelegramMessengerService } from './telegram-messenger.service';
+import { TelegramChatService } from './telegram-chat.service';
 import {
   TaskBotHandlers,
   ManualEntryBotHandlers,
@@ -29,8 +29,8 @@ export class TelegramBotService {
 
   constructor(
     private readonly logger: Logger,
-    private readonly configService: ConfigService,
     private readonly messenger: TelegramMessengerService,
+    private readonly chatService: TelegramChatService,
     private readonly taskService: TaskService,
     private readonly manualEntryService: ManualEntryService,
     private readonly taskHandlers: TaskBotHandlers,
@@ -384,11 +384,19 @@ export class TelegramBotService {
     }
   }
 
-  public async sendOwnerMessage(text: string): Promise<void> {
-    const ownerChatId = this.configService.get<number>(
-      'telegram-bot.ownerChatId',
+  public async broadcastMessage(text: string): Promise<void> {
+    const chats = await this.chatService.getAllChats();
+    const allowedChats = chats.filter((chat) => chat.isWriteAllowed);
+
+    await Promise.all(
+      allowedChats.map((chat) =>
+        this.messenger.sendHtml(+chat.chatId, text).catch((err) => {
+          this.logger.warn(
+            `Failed to broadcast to chat ${chat.chatId}: ${err.message}`,
+          );
+        }),
+      ),
     );
-    await this.messenger.sendHtml(ownerChatId, text);
   }
 
   private async separatorHandler(msg: TelegramBot.Message) {
