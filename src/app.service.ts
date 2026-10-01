@@ -76,7 +76,8 @@ export class AppService {
   @Cron('0 */30 * * * 1-5', { timeZone: 'Europe/Moscow' })
   async handleMeetingsSyncCron() {
     try {
-      const { changed, cancelled } = await this.calendarService.syncMeetings();
+      const { changed, cancelled, rescheduled } =
+        await this.calendarService.syncMeetings();
       if (!changed.length && !cancelled.length) return;
       if (this.isQuietHoursMsk()) return;
 
@@ -84,6 +85,7 @@ export class AppService {
       const digest = this.calendarService.buildDigest(
         meetings,
         '⚠️ Изменения в расписании созвонов на сегодня:',
+        rescheduled,
       );
       await this.telegramBotService.sendOwnerMessage(digest);
       this.logger.debug(

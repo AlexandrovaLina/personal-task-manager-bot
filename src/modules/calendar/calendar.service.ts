@@ -5,9 +5,16 @@ import { MeetingEntity } from './meeting.entity';
 import { fetchTodayMeetings, getTodayRange, formatLocalTime } from './helpers';
 import { extractError, escapeHtml } from 'src/common/helpers';
 
+export interface RescheduledMeeting {
+  meeting: MeetingEntity;
+  previousStartAt: Date;
+  previousEndAt: Date;
+}
+
 export interface SyncMeetingsResult {
   changed: MeetingEntity[];
   cancelled: MeetingEntity[];
+  rescheduled: RescheduledMeeting[];
 }
 
 @Injectable()
@@ -44,6 +51,7 @@ export class CalendarService {
     const remaining = new Map(existing.map((m) => [m.externalId, m]));
 
     const changed: MeetingEntity[] = [];
+    const rescheduled: RescheduledMeeting[] = [];
     for (const meeting of parsed) {
       const prior = remaining.get(meeting.externalId);
       remaining.delete(meeting.externalId);
@@ -51,7 +59,20 @@ export class CalendarService {
       if (prior && prior.contentHash === meeting.contentHash) continue;
 
       const entity = meetingRepository.create({ ...meeting, id: prior?.id });
-      changed.push(await meetingRepository.save(entity));
+      const saved = await meetingRepository.save(entity);
+      changed.push(saved);
+
+      if (
+        prior &&
+        (prior.startAt.getTime() !== meeting.startAt.getTime() ||
+          prior.endAt.getTime() !== meeting.endAt.getTime())
+      ) {
+        rescheduled.push({
+          meeting: saved,
+          previousStartAt: prior.startAt,
+          previousEndAt: prior.endAt,
+        });
+      }
     }
 
     const cancelled = [...remaining.values()];
@@ -59,7 +80,7 @@ export class CalendarService {
       await meetingRepository.softDelete(cancelled.map((m) => m.id));
     }
 
-    return { changed, cancelled };
+    return { changed, cancelled, rescheduled };
   }
 
   public async getTodayMeetings(): Promise<MeetingEntity[]> {
@@ -72,11 +93,23 @@ export class CalendarService {
     });
   }
 
-  public buildDigest(meetings: MeetingEntity[], title: string): string {
+  public buildDigest(
+    meetings: MeetingEntity[],
+    title: string,
+    rescheduled: RescheduledMeeting[] = [],
+  ): string {
     if (!meetings.length) return `${title}\n\nСегодня созвонов нет`;
 
+    const rescheduledByMeetingId = new Map(
+      rescheduled.map((r) => [r.meeting.id, r]),
+    );
+
     const lines = meetings.map((meeting) => {
-      const time = `${formatLocalTime(meeting.startAt, this.tzOffsetHours)} - ${formatLocalTime(meeting.endAt, this.tzOffsetHours)}`;
+      const currentTime = `${formatLocalTime(meeting.startAt, this.tzOffsetHours)} - ${formatLocalTime(meeting.endAt, this.tzOffsetHours)}`;
+      const reschedule = rescheduledByMeetingId.get(meeting.id);
+      const time = reschedule
+        ? `<s>${formatLocalTime(reschedule.previousStartAt, this.tzOffsetHours)} - ${formatLocalTime(reschedule.previousEndAt, this.tzOffsetHours)}</s> ${currentTime}`
+        : currentTime;
       const subject = escapeHtml(meeting.subject);
       const link = meeting.joinUrl ? `\n${meeting.joinUrl}` : '';
 

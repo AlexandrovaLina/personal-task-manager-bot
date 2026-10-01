@@ -97,7 +97,10 @@ function toParsedMeeting(
   const location = getParamValue(event.location);
 
   return {
-    externalId: `${uid}:${start.toISOString()}`,
+    // Date only (not the full timestamp) — a same-day reschedule must keep
+    // the same externalId so it's picked up as a content change on the
+    // existing row, not as "cancelled" + "new meeting".
+    externalId: `${uid}:${start.toISOString().slice(0, 10)}`,
     subject,
     startAt: start,
     endAt: end,
