@@ -271,42 +271,65 @@ export class ReportBuilderService {
       currentTaskCandidates.map((t) => t.externalId),
     );
 
-    const tasksNeedingParentContext = mainTasks.filter(
-      (t) =>
-        t.parentExternalId &&
-        !currentCandidateExternalIds.has(t.parentExternalId),
+    // Non-current-candidate parents that still need to be shown for
+    // context, from two sources that used to be handled separately (and
+    // could conflict — a parent with some dirty children AND some merely
+    // finished ones would only show the dirty subset):
+    // - a dirty task's own parent, when that parent isn't itself dirty
+    //   (otherwise the parent already renders via the second case below)
+    // - a dirty task that is itself a parent of other tasks (dirty or not)
+    const mainTaskExternalIds = new Set(mainTasks.map((t) => t.externalId));
+    const referencedParentExternalIds = new Set(
+      mainTasks
+        .filter(
+          (t) =>
+            t.parentExternalId &&
+            !currentCandidateExternalIds.has(t.parentExternalId) &&
+            !mainTaskExternalIds.has(t.parentExternalId),
+        )
+        .map((t) => t.parentExternalId as string),
     );
-    const contextParents = await this.taskService.getTasksByExternalIds([
-      ...new Set(
-        tasksNeedingParentContext.map((t) => t.parentExternalId as string),
-      ),
+
+    const [referencedParents, combinedChildren] = await Promise.all([
+      this.taskService.getTasksByExternalIds([...referencedParentExternalIds]),
+      this.taskService.getChildrenByParentIds([
+        ...new Set([...referencedParentExternalIds, ...mainTaskExternalIds]),
+      ]),
     ]);
-    const contextParentByExternalId = new Map(
-      contextParents.map((p) => [p.externalId, p]),
+
+    const referencedParentByExternalId = new Map(
+      referencedParents.map((p) => [p.externalId, p]),
     );
-
-    const mainTaskGroups = new Map<
-      string,
-      { parent: TaskEntity; children: TaskEntity[] }
-    >();
-    for (const task of tasksNeedingParentContext) {
-      const parent = contextParentByExternalId.get(
-        task.parentExternalId as string,
-      );
-      if (!parent) continue;
-
-      const group = mainTaskGroups.get(parent.externalId) ?? {
-        parent,
-        children: [],
-      };
-      group.children.push(task);
-      mainTaskGroups.set(parent.externalId, group);
+    const combinedChildrenByParent = new Map<string, TaskEntity[]>();
+    for (const child of combinedChildren) {
+      const siblings =
+        combinedChildrenByParent.get(child.parentExternalId) ?? [];
+      siblings.push(child);
+      combinedChildrenByParent.set(child.parentExternalId, siblings);
     }
+    const getCombinedRenderableChildren = (externalId: string): TaskEntity[] =>
+      (combinedChildrenByParent.get(externalId) ?? []).filter(
+        isChildRenderable,
+      );
+
+    const mainTaskGroups = new Map<string, TaskEntity>();
+    for (const externalId of referencedParentExternalIds) {
+      const parent = referencedParentByExternalId.get(externalId);
+      if (parent) mainTaskGroups.set(externalId, parent);
+    }
+    for (const task of mainTasks) {
+      if (combinedChildrenByParent.has(task.externalId)) {
+        mainTaskGroups.set(task.externalId, task);
+      }
+    }
+
+    const combinedNestedChildIds = new Set(
+      [...combinedChildrenByParent.values()].flat().map((t) => t.id),
+    );
 
     const plainMainTasks = mainTasks.filter(
       (t) =>
-        !mainTaskGroups.has(t.externalId) &&
-        !(t.parentExternalId && mainTaskGroups.has(t.parentExternalId)),
+        !mainTaskGroups.has(t.externalId) && !combinedNestedChildIds.has(t.id),
     );
 
     const currentManualEntries = manualEntries.filter((e) => e.isCurrent);
@@ -326,9 +349,11 @@ export class ReportBuilderService {
           children: children.map((child) => this.buildChildTaskReport(child)),
         };
       }),
-      ...[...mainTaskGroups.values()].map(({ parent, children }) => ({
+      ...[...mainTaskGroups.values()].map((parent) => ({
         text: this.buildParentWithChildrenReport(parent),
-        children: children.map((child) => this.buildChildTaskReport(child)),
+        children: getCombinedRenderableChildren(parent.externalId).map(
+          (child) => this.buildChildTaskReport(child),
+        ),
       })),
       ...mainParentsWithChildren.map((task) => ({
         text: this.buildParentWithChildrenReport(task),
