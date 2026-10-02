@@ -318,11 +318,8 @@ export class ReportBuilderService {
       })),
       ...delegatedParents.map((task) => {
         const children = getRenderableChildren(task.externalId);
-        const reviewChildrenCount = children.filter(
-          (child) => child.state === TaskState.UNDER_REVIEW,
-        ).length;
         return {
-          text: this.buildDelegatedParentReport(task, reviewChildrenCount),
+          text: this.buildDelegatedParentReport(task, children.length),
           children: children.map((child) => this.buildChildTaskReport(child)),
         };
       }),
