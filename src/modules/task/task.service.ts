@@ -220,7 +220,7 @@ export class TaskService {
 
     return taskRepository.find({
       where: { state: In([...HIDEABLE_STATES]), deletedAt: IsNull() },
-      order: { number: 'DESC' },
+      order: { number: 'ASC' },
     });
   }
 
