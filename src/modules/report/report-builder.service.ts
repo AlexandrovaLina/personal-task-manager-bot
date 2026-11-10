@@ -125,7 +125,7 @@ export class ReportBuilderService {
         blockedTasks,
         manualEntries,
       ] = await Promise.all([
-        this.taskService.getDirtyTasks(false, onBoardOnly),
+        this.taskService.getDirtyTasks(false),
         this.taskService.getTasksByState(
           TaskState.IN_PROGRESS,
           currentSprintOnly,
