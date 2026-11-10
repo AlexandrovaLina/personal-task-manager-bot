@@ -81,7 +81,9 @@ export class AppService {
       if (!changed.length && !cancelled.length) return;
       if (this.isQuietHoursMsk()) return;
 
-      const meetings = await this.calendarService.getTodayMeetings();
+      const meetings = await this.calendarService.getTodayMeetings(true);
+      if (!meetings.length) return;
+
       const digest = this.calendarService.buildDigest(
         meetings,
         '⚠️ Изменения в расписании созвонов на сегодня:',

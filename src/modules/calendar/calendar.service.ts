@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Between, DataSource, IsNull } from 'typeorm';
+import { Between, DataSource, IsNull, MoreThan } from 'typeorm';
 import { MeetingEntity } from './meeting.entity';
 import { fetchTodayMeetings, getTodayRange, formatLocalTime } from './helpers';
 import { extractError, escapeHtml } from 'src/common/helpers';
@@ -83,12 +83,18 @@ export class CalendarService {
     return { changed, cancelled, rescheduled };
   }
 
-  public async getTodayMeetings(): Promise<MeetingEntity[]> {
+  public async getTodayMeetings(
+    upcomingOnly = false,
+  ): Promise<MeetingEntity[]> {
     const meetingRepository = this.datasource.getRepository(MeetingEntity);
     const { start, end } = getTodayRange(this.tzOffsetHours);
 
     return meetingRepository.find({
-      where: { startAt: Between(start, end), deletedAt: IsNull() },
+      where: {
+        startAt: Between(start, end),
+        deletedAt: IsNull(),
+        ...(upcomingOnly ? { endAt: MoreThan(new Date()) } : {}),
+      },
       order: { startAt: 'ASC' },
     });
   }
