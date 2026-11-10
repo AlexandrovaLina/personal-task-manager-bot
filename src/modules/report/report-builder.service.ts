@@ -107,10 +107,7 @@ export class ReportBuilderService {
     return header ? `${header}\n\n${body}` : body;
   }
 
-  public async generateAutoReport(
-    currentSprintOnly = false,
-    onBoardOnly = false,
-  ): Promise<string | null> {
+  public async generateAutoReport(): Promise<string | null> {
     let dirtyTasks: TaskEntity[],
       inProgressTasks: TaskEntity[],
       awaitingTasks: TaskEntity[],
@@ -125,22 +122,10 @@ export class ReportBuilderService {
         blockedTasks,
         manualEntries,
       ] = await Promise.all([
-        this.taskService.getDirtyTasks(false),
-        this.taskService.getTasksByState(
-          TaskState.IN_PROGRESS,
-          currentSprintOnly,
-          onBoardOnly,
-        ),
-        this.taskService.getTasksByState(
-          TaskState.AWAITING_CLIENT_FEEDBACK,
-          currentSprintOnly,
-          onBoardOnly,
-        ),
-        this.taskService.getTasksByState(
-          TaskState.BLOCKED,
-          currentSprintOnly,
-          onBoardOnly,
-        ),
+        this.taskService.getDirtyTasks(),
+        this.taskService.getTasksByState(TaskState.IN_PROGRESS),
+        this.taskService.getTasksByState(TaskState.AWAITING_CLIENT_FEEDBACK),
+        this.taskService.getTasksByState(TaskState.BLOCKED),
         this.manualEntryService.getAllEntries(),
       ]);
     } catch (error: unknown) {

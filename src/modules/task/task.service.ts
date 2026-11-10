@@ -104,10 +104,6 @@ export class TaskService {
             number: +issue.key.replace('WA-', ''),
             title: issue.fields.summary,
             url: `https://workaxle.atlassian.net/browse/${issue.key}`,
-            isCurrentSprint:
-              issue.fields.customfield_10020?.some(
-                (sprint) => sprint.state === 'active',
-              ) ?? false,
             parentExternalId: issue.fields.parent?.id ?? null,
             deletedAt: null,
             isHidden: this.resolveIsHidden(
@@ -147,18 +143,13 @@ export class TaskService {
     return task;
   }
 
-  public async getDirtyTasks(
-    currentSprintOnly = false,
-    onBoardOnly = false,
-  ): Promise<TaskEntity[]> {
+  public async getDirtyTasks(): Promise<TaskEntity[]> {
     const taskRepository = this.datasource.getRepository(TaskEntity);
 
     return taskRepository.find({
       where: {
         isCommentDirty: true,
         deletedAt: IsNull(),
-        ...(currentSprintOnly ? { isCurrentSprint: true } : {}),
-        ...(onBoardOnly ? { isOnCxlBoard: true } : {}),
       },
       order: { number: 'DESC' },
     });
@@ -173,19 +164,14 @@ export class TaskService {
     );
   }
 
-  public async getTasksByState(
-    state: string,
-    currentSprintOnly = false,
-    onBoardOnly = false,
-  ): Promise<TaskEntity[]> {
+  public async getTasksByState(state: string): Promise<TaskEntity[]> {
     const taskRepository = this.datasource.getRepository(TaskEntity);
 
     return taskRepository.find({
       where: {
         state,
         deletedAt: IsNull(),
-        ...(currentSprintOnly ? { isCurrentSprint: true } : {}),
-        ...(onBoardOnly ? { isOnCxlBoard: true } : {}),
+        isOnCxlBoard: true,
       },
       order: { number: 'DESC' },
     });

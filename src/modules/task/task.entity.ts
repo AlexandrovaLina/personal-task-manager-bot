@@ -26,9 +26,6 @@ export class TaskEntity extends BaseEntity {
   public isCommentDirty: boolean;
 
   @Column({ type: 'boolean', default: false })
-  public isCurrentSprint: boolean;
-
-  @Column({ type: 'boolean', default: false })
   public isHidden: boolean;
 
   @Column({ type: 'text', nullable: true })
