@@ -58,6 +58,10 @@ export class TelegramBotService {
       },
       { command: 'reset', description: 'Сбросить данные, начать новый период' },
       { command: 'report24', description: 'Отчёт за 24ч из Jira' },
+      {
+        command: 'priority',
+        description: 'Какую To Do задачу брать первой',
+      },
       { command: 'calls', description: 'Созвоны на сегодня' },
       {
         command: 'sync_calls',
@@ -86,6 +90,7 @@ export class TelegramBotService {
         inline_keyboard: [
           [{ text: '📊 Автоотчёт', callback_data: 'menu_report_auto' }],
           [{ text: '📋 Отчёт за 24ч', callback_data: 'menu_report24' }],
+          [{ text: '🎯 Приоритет To Do', callback_data: 'menu_priority' }],
           [{ text: '📅 Созвоны сегодня', callback_data: 'menu_calls' }],
           [
             { text: '🔄 Синк Jira (полный)', callback_data: 'menu_sync_full' },
@@ -173,6 +178,11 @@ export class TelegramBotService {
       await this.jiraReportHandlers.report24Handler(msg.chat.id);
     });
 
+    this.bot.onText(BotCommands.PRIORITY, async (msg) => {
+      this.trackPrivateChat(msg);
+      await this.jiraReportHandlers.priorityHandler(msg.chat.id);
+    });
+
     this.bot.onText(BotCommands.CHATS, async (msg) => {
       this.trackPrivateChat(msg);
       await this.chatHandlers.listChatsHandler(msg.chat.id);
@@ -198,6 +208,7 @@ export class TelegramBotService {
             `Доступные команды:
 /report_auto - автоотчет по задачам с CXL Kanban board
 /report24 - отчёт за 24ч из Jira
+/priority - какую To Do задачу брать первой
 /calls - созвоны на сегодня
 /sync_calls - синхронизация созвонов из календаря
 /hidden - видимость заблокированных/ожидающих задач в автоотчёте
@@ -222,6 +233,9 @@ export class TelegramBotService {
               break;
             case 'report24':
               await this.jiraReportHandlers.report24Handler(chatId);
+              break;
+            case 'priority':
+              await this.jiraReportHandlers.priorityHandler(chatId);
               break;
             case 'calls':
               await this.calendarHandlers.callsHandler(chatId);

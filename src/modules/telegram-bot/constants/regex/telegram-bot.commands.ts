@@ -2,6 +2,7 @@ export const BotCommands = {
   START: /\/start/,
   REPORT_AUTO: /\/report_auto/,
   REPORT24: /\/report24/,
+  PRIORITY: /\/priority/,
   RESET: /\/reset/,
   SYNC_FULL: /\/sync_full/,
   CALLS: /\/calls/,
