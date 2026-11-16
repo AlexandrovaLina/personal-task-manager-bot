@@ -73,7 +73,7 @@ export class AppService {
     }
   }
 
-  @Cron('0 */5 * * * 1-5', { timeZone: 'Europe/Moscow' })
+  @Cron('0 */10 9,15-19 * * 1-5', { timeZone: 'Europe/Moscow' })
   async handleMeetingsSyncCron() {
     try {
       const { changed, cancelled, rescheduled } =
