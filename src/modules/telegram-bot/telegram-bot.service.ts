@@ -407,7 +407,10 @@ export class TelegramBotService {
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to reset data: ${message}`, stack);
-      this.messenger.sendMessage(chatId, 'Ошибка при сбросе данных');
+      this.messenger.sendMessage(
+        chatId,
+        `Ошибка при сбросе данных: ${message}`,
+      );
     }
   }
 }

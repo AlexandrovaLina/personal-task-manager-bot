@@ -45,7 +45,10 @@ export class ManualEntryBotHandlers {
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to save manual entry: ${message}`, stack);
-      this.messenger.sendMessage(chatId, 'Ошибка при сохранении записи');
+      this.messenger.sendMessage(
+        chatId,
+        `Ошибка при сохранении записи: ${message}`,
+      );
     }
   }
 
@@ -94,7 +97,10 @@ export class ManualEntryBotHandlers {
         `Failed to get manual entry [${messageText}]: ${message}`,
         stack,
       );
-      this.messenger.sendMessage(chatId, 'Ошибка при получении записи');
+      this.messenger.sendMessage(
+        chatId,
+        `Ошибка при получении записи: ${message}`,
+      );
     }
   }
 }

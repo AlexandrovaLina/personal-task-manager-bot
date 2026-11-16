@@ -27,7 +27,7 @@ export class CalendarBotHandlers {
       this.logger.error(`Failed to fetch today's meetings: ${message}`, stack);
       this.messenger.sendMessage(
         chatId,
-        'Ошибка при получении списка созвонов',
+        `Ошибка при получении списка созвонов: ${message}`,
       );
     }
   }
@@ -43,7 +43,10 @@ export class CalendarBotHandlers {
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to sync calendar meetings: ${message}`, stack);
-      this.messenger.sendMessage(chatId, 'Ошибка при синхронизации созвонов');
+      this.messenger.sendMessage(
+        chatId,
+        `Ошибка при синхронизации созвонов: ${message}`,
+      );
     }
   }
 }

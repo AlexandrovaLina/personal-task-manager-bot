@@ -48,7 +48,10 @@ export class TaskBotHandlers {
         `Failed to get task [${messageText}]: ${message}`,
         stack,
       );
-      this.messenger.sendMessage(chatId, 'Ошибка при получении задачи');
+      this.messenger.sendMessage(
+        chatId,
+        `Ошибка при получении задачи: ${message}`,
+      );
     }
   }
 
@@ -101,7 +104,10 @@ export class TaskBotHandlers {
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to update task comment: ${message}`, stack);
-      this.messenger.sendMessage(chatId, 'Ошибка при обновлении комментария');
+      this.messenger.sendMessage(
+        chatId,
+        `Ошибка при обновлении комментария: ${message}`,
+      );
     }
   }
 
@@ -132,7 +138,10 @@ export class TaskBotHandlers {
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to generate auto report: ${message}`, stack);
-      this.messenger.sendMessage(chatId, 'Ошибка при генерации автоотчёта');
+      this.messenger.sendMessage(
+        chatId,
+        `Ошибка при генерации автоотчёта: ${message}`,
+      );
     }
   }
 
@@ -156,7 +165,10 @@ export class TaskBotHandlers {
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to build hidden tasks menu: ${message}`, stack);
-      this.messenger.sendMessage(chatId, 'Ошибка при загрузке списка задач');
+      this.messenger.sendMessage(
+        chatId,
+        `Ошибка при загрузке списка задач: ${message}`,
+      );
     }
   }
 
@@ -227,7 +239,10 @@ export class TaskBotHandlers {
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to set next planned task: ${message}`, stack);
-      this.messenger.sendMessage(chatId, 'Ошибка при отметке задачи');
+      this.messenger.sendMessage(
+        chatId,
+        `Ошибка при отметке задачи: ${message}`,
+      );
     }
   }
 
@@ -238,7 +253,10 @@ export class TaskBotHandlers {
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to clear next planned task: ${message}`, stack);
-      this.messenger.sendMessage(chatId, 'Ошибка при снятии отметки');
+      this.messenger.sendMessage(
+        chatId,
+        `Ошибка при снятии отметки: ${message}`,
+      );
     }
   }
 
@@ -253,7 +271,10 @@ export class TaskBotHandlers {
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
       this.logger.error(`Failed to full-sync tasks: ${message}`, stack);
-      this.messenger.sendMessage(chatId, 'Ошибка при синхронизации задач');
+      this.messenger.sendMessage(
+        chatId,
+        `Ошибка при синхронизации задач: ${message}`,
+      );
     }
   }
 }
