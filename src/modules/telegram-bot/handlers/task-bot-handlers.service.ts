@@ -4,10 +4,25 @@ import { extractError } from 'src/common/helpers';
 import { TaskService, TaskEntity } from '../../task';
 import { ReportBuilderService } from '../../report';
 import { TelegramMessengerService } from '../telegram-messenger.service';
-import { UPDATE_TASK_COMMENTS_REGEX, NEXT_PLANNED_REGEX } from '../constants';
-import { entitiesToHtml } from '../helpers';
+import { NEXT_PLANNED_REGEX } from '../constants';
+import {
+  entitiesToHtml,
+  splitTaskCommentBatch,
+  TaskCommentSegment,
+} from '../helpers';
 
 const RECENT_SYNC_WINDOW_DAYS = 4;
+
+type CommentUpdateOutcome = 'updated' | 'cleared' | 'not_found' | 'failed';
+
+interface CommentUpdateResult {
+  outcome: CommentUpdateOutcome;
+  error?: string;
+}
+
+interface BatchCommentResult extends CommentUpdateResult {
+  taskNumber: number;
+}
 
 @Injectable()
 export class TaskBotHandlers {
@@ -55,60 +70,106 @@ export class TaskBotHandlers {
     }
   }
 
+  // Accepts one `<number>: <comment>` or several of them, each starting on
+  // its own line — every segment updates (or clears) its own ticket.
   public async updateTaskHandler(msg: TelegramBot.Message, chatId: number) {
+    const segments = splitTaskCommentBatch(msg.text ?? '');
+    if (!segments.length) {
+      this.messenger.sendMessage(
+        chatId,
+        'Неверный формат. Используйте: <номер>: <комментарий>',
+      );
+      return;
+    }
+
+    if (segments.length === 1) {
+      const [segment] = segments;
+      const result = await this.applyTaskComment(segment, msg.entities);
+      this.messenger.sendMessage(
+        chatId,
+        this.formatSingleCommentResult(segment.taskNumber, result),
+      );
+      return;
+    }
+
+    const results: BatchCommentResult[] = [];
+    for (const segment of segments) {
+      const result = await this.applyTaskComment(segment, msg.entities);
+      results.push({ taskNumber: segment.taskNumber, ...result });
+    }
+    this.messenger.sendMessage(chatId, this.formatBatchCommentResult(results));
+  }
+
+  private async applyTaskComment(
+    segment: TaskCommentSegment,
+    entities?: TelegramBot.MessageEntity[],
+  ): Promise<CommentUpdateResult> {
     try {
-      const match = msg.text.match(UPDATE_TASK_COMMENTS_REGEX);
-      if (!match) {
-        this.messenger.sendMessage(
-          chatId,
-          'Неверный формат. Используйте: <номер>: <комментарий>',
-        );
-        return;
-      }
+      const task = await this.taskService.getTaskByKey(segment.taskNumber);
+      if (!task?.id) return { outcome: 'not_found' };
 
-      const taskNumber = match[1];
-      const rawComment = match[2]?.trim();
-
-      const task = await this.taskService.getTaskByKey(+taskNumber);
-      if (!task?.id) {
-        this.messenger.sendMessage(
-          chatId,
-          `❗️❗️❗️ Таска с таким номером не найдена ❗️❗️❗️`,
-        );
-        return;
-      }
-
-      if (!rawComment) {
+      if (!segment.rawComment) {
         await this.taskService.update(task.id, {
           comments: null,
           isCommentDirty: false,
         });
-        this.messenger.sendMessage(
-          chatId,
-          `Комментарий к таске с номером ${taskNumber} очищен`,
-        );
-        return;
+        return { outcome: 'cleared' };
       }
 
-      const commentOffset = msg.text.length - rawComment.length;
-      const comment = entitiesToHtml(rawComment, msg.entities, commentOffset);
-
+      const comment = entitiesToHtml(
+        segment.rawComment,
+        entities,
+        segment.commentOffset,
+      );
       await this.taskService.update(task.id, {
         comments: comment,
         isCommentDirty: true,
       });
-      this.messenger.sendMessage(
-        chatId,
-        `Таска с номером ${taskNumber} успешно обновлена`,
-      );
+      return { outcome: 'updated' };
     } catch (error: unknown) {
       const { message, stack } = extractError(error);
-      this.logger.error(`Failed to update task comment: ${message}`, stack);
-      this.messenger.sendMessage(
-        chatId,
-        `Ошибка при обновлении комментария: ${message}`,
+      this.logger.error(
+        `Failed to update comment for task ${segment.taskNumber}: ${message}`,
+        stack,
       );
+      return { outcome: 'failed', error: message };
     }
+  }
+
+  private formatSingleCommentResult(
+    taskNumber: number,
+    result: CommentUpdateResult,
+  ): string {
+    switch (result.outcome) {
+      case 'updated':
+        return `Таска с номером ${taskNumber} успешно обновлена`;
+      case 'cleared':
+        return `Комментарий к таске с номером ${taskNumber} очищен`;
+      case 'not_found':
+        return `❗️❗️❗️ Таска с таким номером не найдена ❗️❗️❗️`;
+      case 'failed':
+        return `Ошибка при обновлении комментария: ${result.error}`;
+    }
+  }
+
+  private formatBatchCommentResult(results: BatchCommentResult[]): string {
+    const numbersWith = (outcome: CommentUpdateOutcome) =>
+      results
+        .filter((r) => r.outcome === outcome)
+        .map((r) => r.taskNumber)
+        .join(', ');
+
+    const lines: string[] = [];
+    const updated = numbersWith('updated');
+    const cleared = numbersWith('cleared');
+    const notFound = numbersWith('not_found');
+    if (updated) lines.push(`✅ Обновлены: ${updated}`);
+    if (cleared) lines.push(`🧹 Очищены: ${cleared}`);
+    if (notFound) lines.push(`❗️ Не найдены: ${notFound}`);
+    for (const r of results.filter((r) => r.outcome === 'failed')) {
+      lines.push(`❗️ Ошибка у ${r.taskNumber}: ${r.error}`);
+    }
+    return lines.join('\n');
   }
 
   public async reportAutoHandler(chatId: number) {
