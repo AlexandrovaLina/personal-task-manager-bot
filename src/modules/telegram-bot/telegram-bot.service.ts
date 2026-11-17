@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as TelegramBot from 'node-telegram-bot-api';
 import { TaskService } from '../task';
 import { ManualEntryService } from '../manual-entry';
@@ -29,6 +30,7 @@ export class TelegramBotService {
 
   constructor(
     private readonly logger: Logger,
+    private readonly configService: ConfigService,
     private readonly messenger: TelegramMessengerService,
     private readonly chatService: TelegramChatService,
     private readonly taskService: TaskService,
@@ -343,6 +345,31 @@ export class TelegramBotService {
     this.bot.on('error', (error: Error) => {
       this.logger.error(`Telegram bot error: ${error.message}`, error.stack);
     });
+  }
+
+  // Every Render deploy restarts the process, so a startup on Render means a
+  // new version went live. Skipped locally so `make app` doesn't ping the owner.
+  public async notifyDeployed(): Promise<void> {
+    const isRender = this.configService.get<boolean>('app.isRender');
+    const ownerChatId = this.configService.get<number>(
+      'telegram-bot.ownerChatId',
+    );
+    if (!isRender || !ownerChatId) return;
+
+    const commit = this.configService.get<string>('app.gitCommit');
+    const text = commit
+      ? `Новая версия бота успешно задеплоена (${commit.slice(0, 7)})`
+      : 'Новая версия бота успешно задеплоена';
+
+    try {
+      await this.messenger.sendMessage(ownerChatId, text);
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(
+        `Failed to send deploy notification: ${message}`,
+        stack,
+      );
+    }
   }
 
   private trackPrivateChat(msg: TelegramBot.Message) {

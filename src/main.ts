@@ -13,5 +13,6 @@ async function bootstrap() {
 
   const telegramService = app.get(TelegramBotService);
   telegramService.initBot();
+  await telegramService.notifyDeployed();
 }
 bootstrap();
