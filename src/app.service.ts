@@ -73,13 +73,29 @@ export class AppService {
     }
   }
 
-  @Cron('0 */10 9,15-19 * * 1-5', { timeZone: 'Europe/Moscow' })
+  // Silent morning refresh: keeps /calls up to date before the 10:00 digest
+  // without messaging. The first sync of a day sees every meeting as new, so
+  // notifying here would just repeat the whole schedule; the 10:00 digest
+  // covers anything that changed before it.
+  @Cron('0 */10 9 * * 1-5', { timeZone: 'Europe/Moscow' })
+  async handleMorningMeetingsRefreshCron() {
+    try {
+      await this.calendarService.syncMeetings();
+    } catch (error: unknown) {
+      const { message, stack } = extractError(error);
+      this.logger.error(
+        `[MEETINGS REFRESH JOB] Error during sync: ${message}`,
+        stack,
+      );
+    }
+  }
+
+  @Cron('0 */10 15-19 * * 1-5', { timeZone: 'Europe/Moscow' })
   async handleMeetingsSyncCron() {
     try {
       const { changed, cancelled, rescheduled } =
         await this.calendarService.syncMeetings();
       if (!changed.length && !cancelled.length) return;
-      if (this.isQuietHoursMsk()) return;
 
       const meetings = await this.calendarService.getTodayMeetings(true);
       if (!meetings.length) return;
@@ -100,10 +116,5 @@ export class AppService {
         stack,
       );
     }
-  }
-
-  private isQuietHoursMsk(): boolean {
-    const mskHour = (new Date().getUTCHours() + 3) % 24;
-    return mskHour >= 20 || mskHour < 9;
   }
 }
