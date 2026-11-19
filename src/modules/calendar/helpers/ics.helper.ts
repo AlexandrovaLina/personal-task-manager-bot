@@ -110,6 +110,42 @@ function toParsedMeeting(
   };
 }
 
+function isWithinDay(date: Date, dayStart: Date, dayEnd: Date): boolean {
+  return date >= dayStart && date < dayEnd;
+}
+
+// `expandRecurringEvent` only walks RRULE dates inside the range, so an
+// occurrence moved here from another day (e.g. Wednesday's -> Thursday) is
+// never visited. Pick those up straight from the overrides.
+function findOverridesMovedIntoDay(
+  event: ical.VEvent,
+  dayStart: Date,
+  dayEnd: Date,
+): ParsedMeeting[] {
+  const result: ParsedMeeting[] = [];
+  // node-ical stores each override under both an ISO and a date-only key.
+  // Its `Omit<VEvent, ...>` typing loses the named fields, hence the cast.
+  const overrides = new Set(
+    Object.values(event.recurrences ?? {}) as ical.VEvent[],
+  );
+
+  for (const override of overrides) {
+    const { start, recurrenceid } = override;
+    if (!start || !recurrenceid) continue;
+    // Original slot is inside the day -> already handled by the expansion.
+    if (isWithinDay(recurrenceid, dayStart, dayEnd)) continue;
+    if (!isWithinDay(start, dayStart, dayEnd)) continue;
+    if (isCancelledEvent(override)) continue;
+
+    const end =
+      override.end ??
+      new Date(start.getTime() + (event.end.getTime() - event.start.getTime()));
+    result.push(toParsedMeeting(event.uid, start, end, override));
+  }
+
+  return result;
+}
+
 export async function fetchTodayMeetings(
   icsUrl: string,
   dayStart: Date,
@@ -139,6 +175,7 @@ export async function fetchTodayMeetings(
           ),
         );
       }
+      meetings.push(...findOverridesMovedIntoDay(event, dayStart, dayEnd));
       continue;
     }
 
